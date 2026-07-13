@@ -186,6 +186,27 @@
   .mini-dots{display:flex; gap:3px; flex-shrink:0;}
   .mini-dots i{width:7px; height:7px; border-radius:99px; border:1px solid; display:block;}
   html[data-theme="dark"] .chip{box-shadow:none; border:0.5px solid var(--line);}
+  /* section skins */
+  .hero{border-radius:22px; padding:18px 18px 16px; margin:6px 0 6px; color:#F7F4EC;
+    animation:rise .35s cubic-bezier(.25,1.2,.4,1);}
+  .hero .h-label{font-size:12px; opacity:.85; letter-spacing:.04em; display:flex; align-items:center; gap:6px;}
+  .hero .h-big{font-family:var(--serif); font-size:38px; font-weight:500; margin:4px 0 2px;}
+  .hero .h-sub{font-size:13px; opacity:.85;}
+  .hero .heat{margin-top:14px;}
+  .hero .h-bars{display:flex; gap:5px; align-items:flex-end; height:34px; margin-top:14px;}
+  .hero .h-bars div{flex:1; border-radius:3px 3px 0 0; background:rgba(247,244,236,.75); min-height:3px;}
+  .stmt{background:var(--card); border-radius:14px; overflow:hidden; margin-bottom:12px;
+    box-shadow:0 1px 2px rgba(56,66,50,.05), 0 3px 12px rgba(56,66,50,.06);}
+  html[data-theme="dark"] .stmt{box-shadow:none; border:0.5px solid var(--line);}
+  .stmt .swipe{border-radius:0; margin-bottom:0;}
+  .stmt-line{display:flex; align-items:center; gap:10px; padding:11px 14px;
+    border-top:0.5px solid var(--line); background:var(--card); width:100%; text-align:left;}
+  .stmt .swipe:first-child .stmt-line{border-top:none;}
+  .stmt-date{font-size:11px; color:var(--mut); width:40px; flex-shrink:0; font-variant-numeric:tabular-nums;}
+  .stmt-amt{margin-left:auto; font-variant-numeric:tabular-nums; font-weight:500; font-size:15px; flex-shrink:0;}
+  .skin-habit, .skin-habit button, .skin-habit input{font-family:ui-rounded, -apple-system, sans-serif;}
+  .hlog{width:36px; height:36px; border-radius:99px; display:flex; align-items:center;
+    justify-content:center; color:#F7F4EC; font-size:17px; flex-shrink:0;}
 </style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
 </head>
@@ -556,6 +577,7 @@ function render(){
   title.style.color=""; document.querySelector(".send").style.background="";
   const wash=sp?`color-mix(in srgb, ${accOf(sp)} 6%, var(--cream))`:"";
   document.body.style.background=wash;
+  document.querySelector("header.top").style.display=sp?"none":"";
   document.querySelector(".dock").style.background=wash||"var(--cream)";
   document.getElementById("captureInput").placeholder=sp?(PLACEHOLDERS[flavorOf(sp)]||"Add to "+sp.name+"…"):"Speak or type anything…";
   if(view==="today"){
@@ -759,41 +781,50 @@ function isIncomeSubOf(x){return /income|salary|earn|refund|cashback/i.test(x.na
 function ledgerTxns(s,limit){
   const acc=accOf(s);
   const items=secEntries(s.id).sort((x,y)=>y.ts-x.ts).slice(0,limit);
-  let h="", lastMonth="";
+  let h="", lastMonth="", open=false;
   for(const e of items){
     const mk=new Date(e.ts).toLocaleDateString([], {month:"long", year:"numeric"});
     if(mk!==lastMonth){
-      lastMonth=mk;
+      if(open) h+=`</div>`;
+      lastMonth=mk; open=true;
       const mtot=secEntries(s.id).filter(x=>x.amount!=null&&new Date(x.ts).toLocaleDateString([],{month:"long",year:"numeric"})===mk).reduce((t,x)=>t+x.amount,0);
-      h+=`<div class="ledger-month"><span>${mk}</span><span>${mtot?"$"+Math.round(mtot).toLocaleString():""}</span></div>`;
+      h+=`<div class="ledger-month"><span>${mk}</span><span>${mtot?"$"+Math.round(mtot).toLocaleString():""}</span></div><div class="stmt">`;
     }
     const x=s.subs.find(y=>y.id===e.sub);
     const inc=x&&isIncomeSubOf(x);
-    h+=swipeWrap(e.id,`<div class="swipe-content card row" style="padding:11px 15px;">
-      ${e.type==="task"&&!e.done?`<button class="checkbox" aria-label="Done" onclick="toggleDone('${e.id}',this)"></button>`:""}
-      <div style="min-width:0; flex:1;">
-        <div style="font-size:14px;">${e.done?"<del>":""}${esc(e.text)}${e.done?"</del>":""}</div>
-        <div class="sub-line">${x?esc(x.name):""} · ${fmtDay(e.ts)}${e.type==="task"&&!e.done&&e.due?" · "+dueLabel(e):""}</div>
-      </div>
-      ${e.amount!=null?`<span class="ledger-amt" style="color:${inc?acc:"var(--ink)"};">${inc?"+":""}$${e.amount.toLocaleString()}</span>`:""}
+    const d=new Date(e.ts);
+    h+=swipeWrap(e.id,`<div class="swipe-content stmt-line">
+      <span class="stmt-date">${d.getDate()} ${d.toLocaleDateString([],{month:"short"})}</span>
+      ${e.type==="task"&&!e.done?`<button class="checkbox" aria-label="Done" style="width:18px;height:18px;" onclick="toggleDone('${e.id}',this)"></button>`:""}
+      <span style="min-width:0; flex:1;">
+        <span style="font-size:14px; display:block;">${e.done?"<del>":""}${esc(e.text)}${e.done?"</del>":""}</span>
+        <span class="sub-line">${x?esc(x.name):""}${e.type==="task"&&!e.done&&e.due?" · "+dueLabel(e):""}</span>
+      </span>
+      ${e.amount!=null?`<span class="stmt-amt" style="color:${inc?acc:"var(--ink)"};">${inc?"+":""}$${e.amount.toLocaleString()}</span>`:""}
     </div>`);
   }
+  if(open) h+=`</div>`;
   if(!items.length) h+=`<p class="empty">No transactions yet. Anything with a $ lands here.</p>`;
   return h;
 }
 function renderLedgerPage(s){
   const acc=accOf(s);
-  const isIncomeSub=isIncomeSubOf;
   let h="";
-  h+=`<div style="margin:0 -12px;">${renderDash(s)}</div>`;
   const a=new Date(new Date().getFullYear(),new Date().getMonth(),1).getTime();
   const monthEs=secEntries(s.id).filter(e=>e.amount!=null&&e.ts>=a);
-  const inn=monthEs.filter(e=>{const x=s.subs.find(y=>y.id===e.sub); return x&&isIncomeSub(x);}).reduce((t,e)=>t+e.amount,0);
+  const inn=monthEs.filter(e=>{const x=s.subs.find(y=>y.id===e.sub); return x&&isIncomeSubOf(x);}).reduce((t,e)=>t+e.amount,0);
   const out=monthEs.reduce((t,e)=>t+e.amount,0)-inn;
-  h+=`<div class="dash-row" style="padding:0 4px; margin-bottom:8px;">
-    <span class="dash-sub">in <span style="color:${acc}; font-weight:500;">$${Math.round(inn).toLocaleString()}</span></span>
-    <span class="dash-sub">out <span style="color:var(--ink); font-weight:500;">$${Math.round(out).toLocaleString()}</span></span>
-  </div>`;
+  const net=inn-out;
+  const bars=[...Array(6)].map((_,i)=>monthSum(s.id,5-i));
+  const mx=Math.max(...bars,1);
+  h+=`<div class="hero" style="background:${acc};">
+    <div class="h-label"><i class="ti ${s.icon}"></i>${esc(s.name)} · this month</div>
+    <div class="h-big">${net<0?"−":""}$${Math.abs(Math.round(net)).toLocaleString()}</div>
+    <div class="h-sub">in $${Math.round(inn).toLocaleString()} · out $${Math.round(out).toLocaleString()} · net</div>
+    <div class="h-bars">${bars.map(b=>`<div style="height:${Math.max(9,Math.round(b/mx*100))}%;"></div>`).join("")}</div>
+    <div class="h-sub" style="margin-top:4px; font-size:11px;">last 6 months</div>
+  </div>
+  <button class="dash-flavor" onclick="cycleFlavor('${s.id}')" style="margin:0 4px 10px;">Ledger view · tap to change</button>`;
   h+=`<div class="chip-row">
     <button class="chip" onclick="quickAdd('spent $ on ')">+ expense</button>
     <button class="chip" onclick="quickAdd('received $ ')">+ income</button>
@@ -807,9 +838,16 @@ function renderLedgerPage(s){
   if(secEntries(s.id).length>8) h+=`<p class="empty" style="padding:4px;">Everything else lives in the History tab below.</p>`;
   return h;
 }
+function quickLogHabit(secId,subId,el){
+  const s=db.sections.find(x=>x.id===secId); if(!s) return;
+  const x=s.subs.find(y=>y.id===subId); if(!x) return;
+  db.entries.push({id:uid(), text:x.name, type:"log", sec:secId, sub:subId, ts:Date.now(), done:false, amount:null});
+  save();
+  if(el) el.classList.add("pop");
+  setTimeout(render,240);
+}
 function renderHabitPage(s){
   const acc=accOf(s);
-  let h="";
   const counts={};
   secEntries(s.id).forEach(e=>{
     counts[dayKey(e.ts)]=(counts[dayKey(e.ts)]||0)+1;
@@ -819,20 +857,20 @@ function renderHabitPage(s){
   for(let i=27;i>=0;i--){
     const d=new Date(); d.setDate(d.getDate()-i);
     const c=counts[dayKey(d.getTime())]||0;
-    cells+=`<span style="background:${c?`color-mix(in srgb, ${acc} ${c===1?40:c===2?65:90}%, transparent)`:"transparent"}; border:1px solid color-mix(in srgb, ${acc} 28%, transparent);"></span>`;
+    cells+=`<span style="${c?`background:rgba(247,244,236,${c===1?.4:c===2?.65:.95});`:"border:1px solid rgba(247,244,236,.3);"}"></span>`;
   }
   const st=subStreak(s.id,null);
   const wk=secEntries(s.id).filter(e=>e.ts>Date.now()-7*864e5).length;
-  h+=`<div class="dash" style="margin:2px 0 12px; background:color-mix(in srgb, ${acc} 10%, transparent);">
-    <div class="dash-row">
-      <div><span class="dash-big" style="color:${acc};">${st}</span><span class="dash-sub">day streak</span></div>
-      <div style="text-align:right;"><span class="dash-mid">${wk}</span><span class="dash-sub">this week</span></div>
-    </div>
+  let h=`<div class="skin-habit">`;
+  h+=`<div class="hero" style="background:${acc};">
+    <div class="h-label"><i class="ti ${s.icon}"></i>${esc(s.name)}</div>
+    <div class="h-big">${st} day${st===1?"":"s"}</div>
+    <div class="h-sub">current streak · ${wk} logged this week</div>
     <div class="heat">${cells}</div>
-    <div class="dash-sub" style="margin-top:6px;">last 4 weeks</div>
-    <button class="dash-flavor" onclick="cycleFlavor('${s.id}')">Habit view · tap to change</button>
-  </div>`;
-  h+=`<p class="eyebrow">Habits</p><div class="sec-card">`;
+    <div class="h-sub" style="margin-top:6px; font-size:11px;">last 4 weeks</div>
+  </div>
+  <button class="dash-flavor" onclick="cycleFlavor('${s.id}')" style="margin:0 4px 10px;">Habit view · tap to change</button>`;
+  h+=`<p class="eyebrow">Habits — tap + to log now</p><div class="sec-card">`;
   for(const x of s.subs){
     const es=secEntries(s.id).filter(e=>e.sub===x.id);
     const dset=new Set(es.map(e=>dayKey(e.ts)));
@@ -840,17 +878,18 @@ function renderHabitPage(s){
     const swk=es.filter(e=>e.ts>Date.now()-7*864e5).length;
     const dots=[...Array(7)].map((_,i)=>{const d=new Date(); d.setDate(d.getDate()-(6-i)); return dset.has(dayKey(d.getTime()));});
     h+=swipeWrapX(`renameSub('${s.id}','${x.id}')`,`delSub('${s.id}','${x.id}')`,
-      `<button class="swipe-content sub-row" style="padding:11px 14px; gap:10px;" onclick="subFilter={sec:'${s.id}',sub:'${x.id}'};render()">
-        <span style="flex:1; min-width:0; text-align:left;">${esc(x.name)}
-          <span class="sub-line">${sst?sst+"d streak · ":""}${swk} this week</span></span>
+      `<div class="swipe-content sub-row" style="padding:10px 14px; gap:11px;">
+        <button class="hlog" style="background:${acc};" aria-label="Log ${esc(x.name)} now" onclick="quickLogHabit('${s.id}','${x.id}',this)"><i class="ti ti-plus"></i></button>
+        <button style="flex:1; min-width:0; text-align:left;" onclick="subFilter={sec:'${s.id}',sub:'${x.id}'};render()">${esc(x.name)}
+          <span class="sub-line">${sst?sst+"d streak · ":""}${swk} this week</span></button>
         <span class="mini-dots">${dots.map(b=>`<i style="background:${b?acc:"transparent"}; border-color:${acc};"></i>`).join("")}</span>
-      </button>`);
+      </div>`);
   }
   h+=`<button class="sub-row" style="color:var(--mut);" onclick="addSub('${s.id}')"><i class="ti ti-plus" style="font-size:13px;margin-right:6px;"></i>Add habit</button></div>`;
   const items=secEntries(s.id).sort((x,y)=>y.ts-x.ts).slice(0,8);
   h+=`<p class="eyebrow">Recent</p>`;
-  h+=items.length?items.map(e=>e.type==="task"&&!e.done?taskRow(e):logRow(e)).join(""):`<p class="empty">Nothing yet. Log a habit below.</p>`;
-  return h;
+  h+=items.length?items.map(e=>e.type==="task"&&!e.done?taskRow(e):logRow(e)).join(""):`<p class="empty">Nothing yet. Tap a + above or speak below.</p>`;
+  return h+`</div>`;
 }
 function renderSecHistory(s){
   if(flavorOf(s)==="ledger") return ledgerTxns(s,Infinity);
