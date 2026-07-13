@@ -71,6 +71,9 @@
   .confirm select{border:0.5px solid var(--line2); background:var(--card); border-radius:999px;
     padding:6px 10px; font-size:13px; color:var(--ink2); -webkit-appearance:none; appearance:none; max-width:46%;}
   .confirm-actions{display:flex; gap:8px; margin-top:10px;}
+  .when-row{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; align-items:center;}
+  .when-row input,.when-row select,.sheet input.field,.sheet select{border:0.5px solid var(--line2);
+    background:var(--card); border-radius:10px; padding:7px 10px; font-size:14px; color:var(--ink2); outline:none;}
   .btn{flex:1; text-align:center; padding:10px; border-radius:10px; font-size:15px;}
   .btn.primary{background:var(--sage); color:var(--cream);}
   .btn.quiet{background:var(--card); border:0.5px solid var(--line2); color:var(--mut);}
@@ -109,6 +112,26 @@
   .sheet .opt i{font-size:18px; color:var(--sage);}
   .hidden{display:none !important;}
   del{color:var(--faint);}
+  /* motion */
+  button{transition:transform .16s cubic-bezier(.34,1.56,.64,1), background-color .2s ease, color .2s ease;}
+  button:active{transform:scale(.93);}
+  .sec-head:active,.sub-row:active,.opt:active,.btn:active{transform:scale(.985);}
+  #confirmBox .confirm{animation:rise .3s cubic-bezier(.3,1.4,.6,1);}
+  @keyframes rise{from{opacity:0; transform:translateY(16px) scale(.97);} to{opacity:1; transform:none;}}
+  .sheet{animation:rise .32s cubic-bezier(.25,1.2,.4,1);}
+  .sheet-bg{animation:fade .22s ease;}
+  @keyframes fade{from{opacity:0;} to{opacity:1;}}
+  main.swap{animation:viewfade .26s ease;}
+  @keyframes viewfade{from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:none;}}
+  .bars div{transform-origin:bottom; animation:grow .55s cubic-bezier(.22,1,.36,1);}
+  @keyframes grow{from{transform:scaleY(0);} to{transform:scaleY(1);}}
+  .checkbox{transition:background-color .2s ease, border-color .2s ease;}
+  .checkbox.pop{animation:pop .32s cubic-bezier(.34,1.56,.64,1);}
+  @keyframes pop{0%{transform:scale(1);} 55%{transform:scale(1.35);} 100%{transform:scale(1);}}
+  .nav button{transition:color .2s ease, transform .22s cubic-bezier(.34,1.56,.64,1);}
+  .nav button.on{transform:translateY(-2px);}
+  .mic.listening{animation:pulse 1.2s infinite;}
+  @media (prefers-reduced-motion: reduce){*{animation:none !important; transition:none !important;}}
 </style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
 </head>
@@ -210,6 +233,9 @@ const dayKey=ts=>{const d=new Date(ts);return d.getFullYear()+"-"+String(d.getMo
 const todayKey=()=>dayKey(Date.now());
 function fmtTime(ts){return new Date(ts).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"});}
 function fmtDay(ts){return new Date(ts).toLocaleDateString([], {month:"short",day:"numeric"});}
+function dtLocal(ts){const d=new Date(ts);const p=n=>String(n).padStart(2,"0");
+  return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+"T"+p(d.getHours())+":"+p(d.getMinutes());}
+function repeatOpts(cur){return ["","daily","weekly","monthly"].map(v=>`<option value="${v}" ${(cur||"")===v?"selected":""}>${v||"no repeat"}</option>`).join("");}
 function dueLabel(e){
   if(!e.due) return "whenever";
   const d=new Date(e.due), now=new Date();
@@ -307,9 +333,14 @@ function renderConfirm(){
         <button class="pill ${pending.type==='log'?'on':''}" onclick="setType('log')">Log</button>
         <select onchange="setSec(this.value)">${secOpts}</select>
         <select onchange="setSub(this.value)">${subOpts}</select>
-        ${pending.type==='task'?`<span class="pill" style="border-style:dashed;">${dueLabel(pending)}${pending.repeat?" · repeats":""}</span>`:""}
+        ${pending.type==='task'?`<button class="pill" style="border-style:dashed;" onclick="pending._w=!pending._w;renderConfirm()"><i class="ti ti-clock" style="font-size:12px;"></i> ${dueLabel(pending)}${pending.repeat?" · repeats":""}</button>`:""}
         ${pending.amount!=null?`<span class="pill">$${pending.amount.toLocaleString()}</span>`:""}
       </div>
+      ${pending.type==='task'&&pending._w?`<div class="when-row">
+        <input type="datetime-local" value="${pending.due?dtLocal(pending.due):""}" onchange="pending.due=this.value?new Date(this.value).getTime():null;renderConfirm()">
+        <select onchange="pending.repeat=this.value||null;renderConfirm()">${repeatOpts(pending.repeat)}</select>
+        <button class="pill" onclick="pending.due=null;pending.repeat=null;renderConfirm()">no time</button>
+      </div>`:""}
       <div class="confirm-actions">
         <button class="btn quiet" onclick="cancelPending()">Discard</button>
         <button class="btn primary" onclick="savePending()">Save</button>
@@ -328,6 +359,7 @@ function setSub(id){
 }
 function cancelPending(){pending=null; renderConfirm();}
 function savePending(){
+  delete pending._w;
   learn(pending);
   db.entries.push(pending);
   const saved=pending; pending=null;
@@ -369,7 +401,12 @@ function toggleMic(){
 }
 
 /* ---------- entry actions ---------- */
-function toggleDone(id){
+function toggleDone(id,el){
+  const e=db.entries.find(x=>x.id===id); if(!e) return;
+  if(el&&!e.done){el.classList.add("done","pop"); setTimeout(()=>finishToggle(id),280); return;}
+  finishToggle(id);
+}
+function finishToggle(id){
   const e=db.entries.find(x=>x.id===id); if(!e) return;
   e.done=!e.done; e.doneTs=e.done?Date.now():null;
   if(e.done&&e.repeat){
@@ -382,9 +419,13 @@ function toggleDone(id){
   }
   save(); render();
 }
-function delEntry(id){
+function delEntry(id,el){
   if(!confirm("Delete this entry?")) return;
-  db.entries=db.entries.filter(x=>x.id!==id); save(); render();
+  const row=el?el.closest(".card,.tint-card"):null;
+  const fin=()=>{db.entries=db.entries.filter(x=>x.id!==id); save(); render();};
+  if(row){row.style.transition="opacity .18s ease, transform .18s ease";
+    row.style.opacity="0"; row.style.transform="scale(.96)"; setTimeout(fin,180);}
+  else fin();
 }
 function pathOf(e){
   const s=db.sections.find(x=>x.id===e.sec);
@@ -404,7 +445,12 @@ function streak(){
 
 /* ---------- views ---------- */
 let view="today", openSec=null, subFilter=null;
-function go(v){view=v; subFilter=null; render();}
+function go(v){
+  view=v; subFilter=null;
+  const m=document.getElementById("main");
+  m.classList.remove("swap"); void m.offsetWidth; m.classList.add("swap");
+  render();
+}
 function render(){
   ["today","sections","review"].forEach(v=>document.getElementById("nav-"+v).classList.toggle("on",v===view));
   const s=streak();
@@ -427,14 +473,15 @@ function render(){
 }
 function taskRow(e){
   return `<div class="card row">
-    <button class="checkbox ${e.done?'done':''}" aria-label="Done" onclick="toggleDone('${e.id}')"></button>
+    <button class="checkbox ${e.done?'done':''}" aria-label="Done" onclick="toggleDone('${e.id}',this)"></button>
     <div style="min-width:0;">
       <div style="font-size:14px;">${e.done?"<del>":""}${esc(e.text)}${e.done?"</del>":""}</div>
       <div class="sub-line">${esc(pathOf(e))}${e.repeat?" · repeats "+e.repeat:""}</div>
     </div>
     <span class="task-when ${e.due?'':'loose'}">${dueLabel(e)}</span>
     ${e.due?`<button class="icon-btn" aria-label="Add to calendar" onclick="icsFor('${e.id}')"><i class="ti ti-calendar-plus"></i></button>`:""}
-    <button class="icon-btn" aria-label="Delete" onclick="delEntry('${e.id}')"><i class="ti ti-x" style="font-size:14px;"></i></button>
+    <button class="icon-btn" aria-label="Edit" onclick="openEdit('${e.id}')"><i class="ti ti-pencil" style="font-size:15px;"></i></button>
+    <button class="icon-btn" aria-label="Delete" onclick="delEntry('${e.id}',this)"><i class="ti ti-x" style="font-size:14px;"></i></button>
   </div>`;
 }
 function logRow(e){
@@ -443,7 +490,8 @@ function logRow(e){
       <div style="font-size:14px;">${esc(e.text)}</div>
       <div class="sub-line">${esc(pathOf(e))} · ${fmtTime(e.doneTs||e.ts)}${e.amount!=null?" · $"+e.amount.toLocaleString():""}</div>
     </div>
-    <button class="icon-btn" aria-label="Delete" onclick="delEntry('${e.id}')"><i class="ti ti-x" style="font-size:13px;"></i></button>
+    <button class="icon-btn" aria-label="Edit" onclick="openEdit('${e.id}')"><i class="ti ti-pencil" style="font-size:14px;"></i></button>
+    <button class="icon-btn" aria-label="Delete" onclick="delEntry('${e.id}',this)"><i class="ti ti-x" style="font-size:13px;"></i></button>
   </div>`;
 }
 function renderToday(open,logs){
@@ -461,7 +509,9 @@ function monthTotal(secId,subId){
   return db.entries.filter(e=>e.sec===secId&&e.sub===subId&&e.amount!=null&&new Date(e.ts).getMonth()===now.getMonth()&&new Date(e.ts).getFullYear()===now.getFullYear())
     .reduce((a,e)=>a+e.amount,0);
 }
+let manage=false;
 function renderSections(){
+  if(manage) return renderManage();
   let h="";
   for(const s of db.sections){
     const count=db.entries.filter(e=>e.sec===s.id).length;
@@ -485,8 +535,63 @@ function renderSections(){
     }
     h+=`</div>`;
   }
-  h+=`<button class="ghost-row" onclick="addSection()"><i class="ti ti-plus"></i>Add section</button>`;
+  h+=`<button class="ghost-row" onclick="addSection()"><i class="ti ti-plus"></i>Add section</button>
+  <button class="ghost-row" onclick="manage=true;render()"><i class="ti ti-pencil"></i>Edit sections</button>`;
   return h;
+}
+function renderManage(){
+  let h=`<button class="ghost-row" onclick="manage=false;render()"><i class="ti ti-arrow-left"></i>Done editing</button>`;
+  for(const s of db.sections){
+    h+=`<div class="sec-card">
+      <div class="sec-head">
+        <i class="ti ${s.icon}" style="font-size:18px;color:var(--sage);"></i>
+        <span class="name">${esc(s.name)}</span>
+        <span style="margin-left:auto;display:flex;gap:2px;">
+          <button class="icon-btn" aria-label="Rename" onclick="renameSection('${s.id}')"><i class="ti ti-pencil" style="font-size:15px;"></i></button>
+          <button class="icon-btn" aria-label="Delete" onclick="delSection('${s.id}')"><i class="ti ti-trash" style="font-size:15px;color:var(--warn);"></i></button>
+        </span>
+      </div>`;
+    for(const x of s.subs){
+      h+=`<div class="sub-row">${esc(x.name)}
+        <span style="margin-left:auto;display:flex;gap:2px;">
+          <button class="icon-btn" aria-label="Rename" onclick="renameSub('${s.id}','${x.id}')"><i class="ti ti-pencil" style="font-size:14px;"></i></button>
+          <button class="icon-btn" aria-label="Delete" onclick="delSub('${s.id}','${x.id}')"><i class="ti ti-trash" style="font-size:14px;color:var(--warn);"></i></button>
+        </span></div>`;
+    }
+    h+=`<button class="sub-row" style="color:var(--mut);" onclick="addSub('${s.id}')"><i class="ti ti-plus" style="font-size:13px;margin-right:6px;"></i>Add subsection</button></div>`;
+  }
+  return h;
+}
+function renameSection(id){
+  const s=db.sections.find(x=>x.id===id);
+  const n=prompt("Rename section:",s.name);
+  if(n&&n.trim()){s.name=n.trim(); save(); render();}
+}
+function delSection(id){
+  if(db.sections.length<=1){alert("You need at least one section."); return;}
+  const s=db.sections.find(x=>x.id===id);
+  const n=db.entries.filter(e=>e.sec===id).length;
+  const other=db.sections.find(x=>x.id!==id);
+  if(!confirm(`Delete "${s.name}"?`+(n?` Its ${n} entr${n===1?"y":"ies"} will move to ${other.name}.`:""))) return;
+  db.sections=db.sections.filter(x=>x.id!==id);
+  db.entries.forEach(e=>{if(e.sec===id){e.sec=other.id; e.sub=other.subs[0].id;}});
+  save(); render();
+}
+function renameSub(sid,xid){
+  const x=db.sections.find(s=>s.id===sid).subs.find(y=>y.id===xid);
+  const n=prompt("Rename subsection:",x.name);
+  if(n&&n.trim()){x.name=n.trim(); save(); render();}
+}
+function delSub(sid,xid){
+  const s=db.sections.find(x=>x.id===sid);
+  if(s.subs.length<=1){alert("A section needs at least one subsection."); return;}
+  const x=s.subs.find(y=>y.id===xid);
+  const n=db.entries.filter(e=>e.sec===sid&&e.sub===xid).length;
+  const other=s.subs.find(y=>y.id!==xid);
+  if(!confirm(`Delete "${x.name}"?`+(n?` Its ${n} entr${n===1?"y":"ies"} will move to ${other.name}.`:""))) return;
+  s.subs=s.subs.filter(y=>y.id!==xid);
+  db.entries.forEach(e=>{if(e.sec===sid&&e.sub===xid) e.sub=other.id;});
+  save(); render();
 }
 function addSection(){
   const name=prompt("Name the new section:"); if(!name) return;
@@ -508,7 +613,8 @@ function renderSubHistory(){
     `<div class="tint-card" style="display:flex;align-items:flex-start;gap:8px;">
      <div style="flex:1;min-width:0;"><div style="font-size:14px;">${e.done?"<del>":""}${esc(e.text)}${e.done?"</del>":""}</div>
      <div class="sub-line">${fmtDay(e.ts)}${e.amount!=null?" · $"+e.amount.toLocaleString():""}</div></div>
-     <button class="icon-btn" aria-label="Delete" onclick="delEntry('${e.id}')"><i class="ti ti-x" style="font-size:13px;"></i></button></div>`).join("")
+     <button class="icon-btn" aria-label="Edit" onclick="openEdit('${e.id}')"><i class="ti ti-pencil" style="font-size:14px;"></i></button>
+    <button class="icon-btn" aria-label="Delete" onclick="delEntry('${e.id}',this)"><i class="ti ti-x" style="font-size:13px;"></i></button></div>`).join("")
     :`<p class="empty">Nothing here yet.</p>`;
   return h;
 }
@@ -539,6 +645,48 @@ function renderSearch(q){
     <div style="font-size:14px;">${esc(e.text)}</div>
     <div class="sub-line">${esc(pathOf(e))} · ${fmtDay(e.ts)}${e.type==="task"?(e.done?" · done":" · open"):""}</div></div>`).join("")
     :`<p class="empty">No matches.</p>`;
+}
+
+/* ---------- edit entry ---------- */
+let draft=null;
+function openEdit(id){
+  const e=db.entries.find(x=>x.id===id); if(!e) return;
+  draft={...e};
+  renderEdit();
+}
+function renderEdit(){
+  const body=document.getElementById("sheetBody");
+  const secOpts=db.sections.map(s=>`<option value="${s.id}" ${s.id===draft.sec?"selected":""}>${esc(s.name)}</option>`).join("");
+  const sec=db.sections.find(s=>s.id===draft.sec)||db.sections[0];
+  const subOpts=sec.subs.map(x=>`<option value="${x.id}" ${x.id===draft.sub?"selected":""}>${esc(x.name)}</option>`).join("");
+  body.innerHTML=`<h2 style="margin-bottom:10px;">Edit entry</h2>
+    <input class="field" id="editText" value="${esc(draft.text)}" oninput="draft.text=this.value"
+      style="width:100%; margin-bottom:10px;">
+    <div class="pills" style="margin-bottom:4px;">
+      <button class="pill ${draft.type==='task'?'on':''}" onclick="draft.type='task';renderEdit()">Task</button>
+      <button class="pill ${draft.type==='log'?'on':''}" onclick="draft.type='log';renderEdit()">Log</button>
+      <select onchange="draft.sec=this.value;draft.sub=db.sections.find(s=>s.id===this.value).subs[0].id;renderEdit()">${secOpts}</select>
+      <select onchange="draft.sub=this.value">${subOpts}</select>
+    </div>
+    ${draft.type==='task'?`<div class="when-row">
+      <input type="datetime-local" value="${draft.due?dtLocal(draft.due):""}" onchange="draft.due=this.value?new Date(this.value).getTime():null">
+      <select onchange="draft.repeat=this.value||null">${repeatOpts(draft.repeat)}</select>
+      <button class="pill" onclick="draft.due=null;draft.repeat=null;renderEdit()">no time</button>
+    </div>`:""}
+    <div class="confirm-actions" style="margin-top:16px;">
+      <button class="btn quiet" onclick="draft=null;closeSheet()">Cancel</button>
+      <button class="btn primary" onclick="saveEdit()">Save changes</button>
+    </div>`;
+  document.getElementById("sheetWrap").classList.remove("hidden");
+}
+function saveEdit(){
+  if(!draft) return;
+  draft.text=draft.text.trim()||draft.text;
+  draft.amount=parseAmount(draft.text);
+  if(draft.type==="log"){draft.due=null; draft.repeat=null;}
+  const i=db.entries.findIndex(x=>x.id===draft.id);
+  if(i>=0) db.entries[i]=draft;
+  draft=null; save(); closeSheet(); render();
 }
 
 /* ---------- theme ---------- */
