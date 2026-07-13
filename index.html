@@ -167,6 +167,12 @@
   .dash-dots span{width:14px; height:14px; border-radius:99px; border:1.5px solid;}
   .dash-line{display:flex; justify-content:space-between; gap:10px; font-size:13px; padding:4px 0; color:var(--ink2); min-width:0;}
   .dash-flavor{font-size:11px; color:var(--mut); margin-top:8px; display:block;}
+  .launch{display:flex; align-items:center; gap:12px; width:100%; text-align:left;
+    background:var(--card); padding:14px; border-radius:16px;}
+  .launch-ic{width:42px; height:42px; border-radius:14px; display:flex; align-items:center;
+    justify-content:center; font-size:20px; flex-shrink:0;}
+  .launch-name{display:block; font-size:15px; font-weight:500;}
+  .launch-stat{display:block; font-size:12px; color:var(--mut); margin-top:1px;}
 </style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
 </head>
@@ -354,6 +360,20 @@ function submitCapture(){
   const inp=document.getElementById("captureInput");
   const text=inp.value.trim(); if(!text) return;
   const g=classify(text);
+  if(view==="sections"&&secPage&&g.sec!==secPage){
+    const s=db.sections.find(x=>x.id===secPage);
+    if(s){
+      g.sec=secPage;
+      const t=" "+text.toLowerCase()+" ";
+      let best=s.subs[0].id, bs=0;
+      for(const sub of s.subs){
+        let sc=0; for(const kw of sub.kw||[]) if(t.includes(kw)) sc++;
+        for(const kw of db.learned[s.id+"/"+sub.id]||[]) if(t.includes(kw)) sc+=2;
+        if(sc>bs){bs=sc; best=sub.id;}
+      }
+      g.sub=best;
+    }
+  }
   pending={id:uid(), text, ...g, ts:Date.now(), done:false};
   inp.value=""; inp.blur();
   renderConfirm();
@@ -484,9 +504,9 @@ function streak(){
 }
 
 /* ---------- views ---------- */
-let view="today", openSec=null, subFilter=null;
+let view="today", openSec=null, subFilter=null, secPage=null;
 function go(v){
-  view=v; subFilter=null;
+  view=v; subFilter=null; secPage=null;
   const m=document.getElementById("main");
   m.classList.remove("swap"); void m.offsetWidth; m.classList.add("swap");
   render();
@@ -504,8 +524,10 @@ function render(){
     sub.textContent=open.length+" to do · "+logsToday.length+" logged today";
     main.innerHTML=renderToday(open,logsToday);
   }else if(view==="sections"){
-    title.textContent="Sections"; sub.textContent="";
-    main.innerHTML=subFilter?renderSubHistory():renderSections();
+    const sp=secPage?db.sections.find(x=>x.id===secPage):null;
+    title.textContent=sp?sp.name:"Sections";
+    sub.textContent=sp?FLAVOR_LABEL[flavorOf(sp)]+" · "+secEntries(sp.id).length+" entries":"";
+    main.innerHTML=subFilter?renderSubHistory():(secPage?renderSecPage():renderSections());
   }else{
     title.textContent="Review"; sub.textContent="";
     main.innerHTML=renderReview();
@@ -521,8 +543,8 @@ function swipeWrap(id,inner){
     ${inner}
   </div>`;
 }
-function swipeWrapX(editFn,delFn,inner){
-  return `<div class="swipe flat">
+function swipeWrapX(editFn,delFn,inner,cls){
+  return `<div class="swipe ${cls===undefined?"flat":cls}">
     <div class="swipe-actions">
       <button class="sa edit" aria-label="Rename" onclick="${editFn}"><i class="ti ti-pencil"></i></button>
       <button class="sa del" aria-label="Delete" onclick="${delFn}"><i class="ti ti-trash"></i></button>
@@ -542,7 +564,7 @@ function taskRow(e){
 function logRow(e){
   return swipeWrap(e.id,`<div class="swipe-content tint-card">
     <div style="font-size:14px;">${esc(e.text)}</div>
-    <div class="sub-line">${esc(pathOf(e))} · ${fmtTime(e.doneTs||e.ts)}${e.amount!=null?" · $"+e.amount.toLocaleString():""}</div>
+    <div class="sub-line">${esc(pathOf(e))} · ${dayKey(e.doneTs||e.ts)===todayKey()?fmtTime(e.doneTs||e.ts):fmtDay(e.doneTs||e.ts)}${e.amount!=null?" · $"+e.amount.toLocaleString():""}</div>
   </div>`);
 }
 function renderToday(open,logs){
@@ -643,36 +665,59 @@ function renderDash(s){
 }
 
 let manage=false;
+function miniStat(s){
+  const f=flavorOf(s), es=secEntries(s.id);
+  if(f==="ledger"){const c=monthSum(s.id,0); return c?"$"+Math.round(c).toLocaleString()+" this month":"nothing this month";}
+  if(f==="habit"){const wk=es.filter(e=>e.ts>Date.now()-7*864e5).length; return wk?wk+" entr"+(wk===1?"y":"ies")+" this week":"quiet week so far";}
+  if(f==="timeline"){
+    const open=es.filter(e=>e.type==="task"&&!e.done&&e.due);
+    if(!open.length) return "nothing scheduled";
+    const d=Math.ceil((Math.min(...open.map(e=>e.due))-Date.now())/864e5);
+    return d<0?Math.abs(d)+"d overdue":d<=0?"due today":"next in "+d+"d";
+  }
+  if(f==="contact"){
+    const lasts=s.subs.map(x=>{const e2=es.filter(e=>e.sub===x.id); return e2.length?Math.max(...e2.map(e=>e.doneTs||e.ts)):null;}).filter(x=>x!==null);
+    if(!lasts.length) return "no entries yet";
+    const d=Math.floor((Date.now()-Math.min(...lasts))/864e5);
+    return d===0?"in touch today":"oldest contact "+d+"d ago";
+  }
+  const n=es.length; return n?n+" entr"+(n===1?"y":"ies"):"empty";
+}
 function renderSections(){
   if(manage) return renderManage();
   let h="";
   for(const s of db.sections){
-    const count=db.entries.filter(e=>e.sec===s.id).length;
-    const isOpen=openSec===s.id;
-    const secTotal=s.subs.reduce((a,x)=>a+monthTotal(s.id,x.id),0);
-    h+=`<div class="sec-card">`;
     h+=swipeWrapX(`renameSection('${s.id}')`,`delSection('${s.id}')`,
-      `<button class="swipe-content sec-head" onclick="openSec=openSec==='${s.id}'?null:'${s.id}';render()">
-        <i class="ti ${s.icon}" style="font-size:18px;color:${accOf(s)};"></i>
-        <span class="name">${esc(s.name)}</span>
-        <span class="meta">${secTotal>0?"$"+Math.round(secTotal).toLocaleString()+" this month · ":""}${count} entr${count===1?"y":"ies"}</span>
-        <i class="ti ti-chevron-${isOpen?"up":"down"}" style="font-size:14px;color:var(--sage-lt);"></i>
-      </button>`);
-    if(isOpen){
-      h+=renderDash(s);
-      for(const x of s.subs){
-        const c=db.entries.filter(e=>e.sec===s.id&&e.sub===x.id).length;
-        const t=monthTotal(s.id,x.id);
-        h+=swipeWrapX(`renameSub('${s.id}','${x.id}')`,`delSub('${s.id}','${x.id}')`,
-          `<button class="swipe-content sub-row" onclick="subFilter={sec:'${s.id}',sub:'${x.id}'};render()">
-          ${esc(x.name)}<span class="meta">${t>0?"$"+Math.round(t).toLocaleString()+" · ":""}${c}</span></button>`);
-      }
-      h+=`<button class="sub-row" style="color:var(--mut);" onclick="addSub('${s.id}')"><i class="ti ti-plus" style="font-size:13px;margin-right:6px;"></i>Add subsection</button>`;
-    }
-    h+=`</div>`;
+      `<button class="swipe-content launch" onclick="secPage='${s.id}';render()">
+        <span class="launch-ic" style="background:color-mix(in srgb, ${accOf(s)} 14%, transparent); color:${accOf(s)};"><i class="ti ${s.icon}"></i></span>
+        <span style="min-width:0; flex:1;">
+          <span class="launch-name">${esc(s.name)}</span>
+          <span class="launch-stat">${miniStat(s)}</span>
+        </span>
+        <i class="ti ti-chevron-right" style="color:var(--faint); font-size:15px;"></i>
+      </button>`,"");
   }
   h+=`<button class="ghost-row" onclick="addSection()"><i class="ti ti-plus"></i>Add section</button>
   <button class="ghost-row" onclick="manage=true;render()"><i class="ti ti-pencil"></i>Edit sections</button>`;
+  return h;
+}
+function renderSecPage(){
+  const s=db.sections.find(x=>x.id===secPage);
+  if(!s){secPage=null; return renderSections();}
+  let h=`<button class="ghost-row" onclick="secPage=null;render()"><i class="ti ti-arrow-left"></i>Sections</button>`;
+  h+=`<div style="margin:0 -12px;">${renderDash(s)}</div>`;
+  h+=`<p class="eyebrow">Subsections</p><div class="sec-card">`;
+  for(const x of s.subs){
+    const c=db.entries.filter(e=>e.sec===s.id&&e.sub===x.id).length;
+    const t=monthTotal(s.id,x.id);
+    h+=swipeWrapX(`renameSub('${s.id}','${x.id}')`,`delSub('${s.id}','${x.id}')`,
+      `<button class="swipe-content sub-row" style="padding-left:14px;" onclick="subFilter={sec:'${s.id}',sub:'${x.id}'};render()">
+      ${esc(x.name)}<span class="meta">${t>0?"$"+Math.round(t).toLocaleString()+" · ":""}${c}</span></button>`);
+  }
+  h+=`<button class="sub-row" style="color:var(--mut);" onclick="addSub('${s.id}')"><i class="ti ti-plus" style="font-size:13px;margin-right:6px;"></i>Add subsection</button></div>`;
+  const items=secEntries(s.id).sort((a,b)=>b.ts-a.ts).slice(0,20);
+  h+=`<p class="eyebrow">Recent</p>`;
+  h+=items.length?items.map(e=>e.type==="task"&&!e.done?taskRow(e):logRow(e)).join(""):`<p class="empty">Nothing here yet. Anything you add now lands in ${esc(s.name)}.</p>`;
   return h;
 }
 function renderManage(){

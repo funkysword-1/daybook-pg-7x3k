@@ -1,4 +1,4 @@
-const CACHE = "daybook-v9";
+const CACHE = "daybook-v10";
 const ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./icon-180.png", "./icon-512.png"];
 
 self.addEventListener("install", e => {
