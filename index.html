@@ -173,6 +173,17 @@
     justify-content:center; font-size:20px; flex-shrink:0;}
   .launch-name{display:block; font-size:15px; font-weight:500;}
   .launch-stat{display:block; font-size:12px; color:var(--mut); margin-top:1px;}
+  .chip-row{display:flex; gap:8px; overflow-x:auto; padding:2px 0 10px; -webkit-overflow-scrolling:touch;}
+  .chip{flex-shrink:0; font-size:13px; border-radius:999px; padding:7px 13px;
+    background:var(--card); color:var(--ink2); box-shadow:0 1px 3px rgba(56,66,50,.07);}
+  .ledger-month{display:flex; justify-content:space-between; font-family:var(--serif);
+    font-style:italic; font-size:14px; color:var(--mut); margin:16px 2px 8px;}
+  .ledger-amt{font-size:15px; font-weight:500; flex-shrink:0;}
+  .heat{display:grid; grid-template-columns:repeat(14,1fr); gap:4px; margin-top:10px;}
+  .heat span{aspect-ratio:1; border-radius:4px;}
+  .mini-dots{display:flex; gap:3px; flex-shrink:0;}
+  .mini-dots i{width:7px; height:7px; border-radius:99px; border:1px solid; display:block;}
+  html[data-theme="dark"] .chip{box-shadow:none; border:0.5px solid var(--line);}
 </style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
 </head>
@@ -517,6 +528,7 @@ function render(){
   document.getElementById("streakChip").textContent=s>0?s+"-day streak":"";
   const main=document.getElementById("main");
   const title=document.getElementById("pageTitle"), sub=document.getElementById("pageSub");
+  title.style.color=""; document.querySelector(".send").style.background="";
   if(view==="today"){
     title.textContent=new Date().toLocaleDateString([], {weekday:"long", month:"long", day:"numeric"});
     const open=db.entries.filter(e=>e.type==="task"&&!e.done);
@@ -528,6 +540,8 @@ function render(){
     title.textContent=sp?sp.name:"Sections";
     sub.textContent=sp?FLAVOR_LABEL[flavorOf(sp)]+" · "+secEntries(sp.id).length+" entries":"";
     main.innerHTML=subFilter?renderSubHistory():(secPage?renderSecPage():renderSections());
+    title.style.color=sp?accOf(sp):"";
+    document.querySelector(".send").style.background=sp?accOf(sp):"";
   }else{
     title.textContent="Review"; sub.textContent="";
     main.innerHTML=renderReview();
@@ -701,9 +715,114 @@ function renderSections(){
   <button class="ghost-row" onclick="manage=true;render()"><i class="ti ti-pencil"></i>Edit sections</button>`;
   return h;
 }
+function quickAdd(t){
+  const i=document.getElementById("captureInput");
+  i.value=t; i.focus();
+}
+function backRow(){return `<button class="ghost-row" onclick="secPage=null;render()"><i class="ti ti-arrow-left"></i>Sections</button>`;}
+function subStreak(secId,subId){
+  const dset=new Set(secEntries(secId).filter(e=>subId===null||e.sub===subId).map(e=>dayKey(e.ts)));
+  let st=0; const d=new Date();
+  if(!dset.has(dayKey(d.getTime()))) d.setDate(d.getDate()-1);
+  while(dset.has(dayKey(d.getTime()))){st++; d.setDate(d.getDate()-1);}
+  return st;
+}
+function renderLedgerPage(s){
+  const acc=accOf(s);
+  const isIncomeSub=x=>/income|salary|earn|refund|cashback/i.test(x.name);
+  let h=backRow();
+  h+=`<div style="margin:0 -12px;">${renderDash(s)}</div>`;
+  const a=new Date(new Date().getFullYear(),new Date().getMonth(),1).getTime();
+  const monthEs=secEntries(s.id).filter(e=>e.amount!=null&&e.ts>=a);
+  const inn=monthEs.filter(e=>{const x=s.subs.find(y=>y.id===e.sub); return x&&isIncomeSub(x);}).reduce((t,e)=>t+e.amount,0);
+  const out=monthEs.reduce((t,e)=>t+e.amount,0)-inn;
+  h+=`<div class="dash-row" style="padding:0 4px; margin-bottom:8px;">
+    <span class="dash-sub">in <span style="color:${acc}; font-weight:500;">$${Math.round(inn).toLocaleString()}</span></span>
+    <span class="dash-sub">out <span style="color:var(--ink); font-weight:500;">$${Math.round(out).toLocaleString()}</span></span>
+  </div>`;
+  h+=`<div class="chip-row">
+    <button class="chip" onclick="quickAdd('spent $ on ')">+ expense</button>
+    <button class="chip" onclick="quickAdd('received $ ')">+ income</button>
+    <button class="chip" onclick="quickAdd('pay  bill tonight')">+ bill</button>
+  </div>`;
+  h+=`<div class="chip-row">`+s.subs.map(x=>{
+    const c=db.entries.filter(e=>e.sec===s.id&&e.sub===x.id).length;
+    return `<button class="chip" onclick="subFilter={sec:'${s.id}',sub:'${x.id}'};render()">${esc(x.name)} · ${c}</button>`;
+  }).join("")+`<button class="chip" onclick="addSub('${s.id}')">+</button></div>`;
+  const items=secEntries(s.id).sort((x,y)=>y.ts-x.ts);
+  let lastMonth="";
+  for(const e of items){
+    const mk=new Date(e.ts).toLocaleDateString([], {month:"long", year:"numeric"});
+    if(mk!==lastMonth){
+      lastMonth=mk;
+      const mtot=items.filter(x=>x.amount!=null&&new Date(x.ts).toLocaleDateString([],{month:"long",year:"numeric"})===mk).reduce((t,x)=>t+x.amount,0);
+      h+=`<div class="ledger-month"><span>${mk}</span><span>${mtot?"$"+Math.round(mtot).toLocaleString():""}</span></div>`;
+    }
+    const x=s.subs.find(y=>y.id===e.sub);
+    const inc=x&&isIncomeSub(x);
+    h+=swipeWrap(e.id,`<div class="swipe-content card row" style="padding:11px 15px;">
+      ${e.type==="task"&&!e.done?`<button class="checkbox" aria-label="Done" onclick="toggleDone('${e.id}',this)"></button>`:""}
+      <div style="min-width:0; flex:1;">
+        <div style="font-size:14px;">${e.done?"<del>":""}${esc(e.text)}${e.done?"</del>":""}</div>
+        <div class="sub-line">${x?esc(x.name):""} · ${fmtDay(e.ts)}${e.type==="task"&&!e.done&&e.due?" · "+dueLabel(e):""}</div>
+      </div>
+      ${e.amount!=null?`<span class="ledger-amt" style="color:${inc?acc:"var(--ink)"};">${inc?"+":""}$${e.amount.toLocaleString()}</span>`:""}
+    </div>`);
+  }
+  if(!items.length) h+=`<p class="empty">No transactions yet. Anything with a $ lands here.</p>`;
+  return h;
+}
+function renderHabitPage(s){
+  const acc=accOf(s);
+  let h=backRow();
+  const counts={};
+  secEntries(s.id).forEach(e=>{
+    counts[dayKey(e.ts)]=(counts[dayKey(e.ts)]||0)+1;
+    if(e.doneTs) counts[dayKey(e.doneTs)]=(counts[dayKey(e.doneTs)]||0)+1;
+  });
+  let cells="";
+  for(let i=27;i>=0;i--){
+    const d=new Date(); d.setDate(d.getDate()-i);
+    const c=counts[dayKey(d.getTime())]||0;
+    cells+=`<span style="background:${c?`color-mix(in srgb, ${acc} ${c===1?40:c===2?65:90}%, transparent)`:"transparent"}; border:1px solid color-mix(in srgb, ${acc} 28%, transparent);"></span>`;
+  }
+  const st=subStreak(s.id,null);
+  const wk=secEntries(s.id).filter(e=>e.ts>Date.now()-7*864e5).length;
+  h+=`<div class="dash" style="margin:2px 0 12px; background:color-mix(in srgb, ${acc} 10%, transparent);">
+    <div class="dash-row">
+      <div><span class="dash-big" style="color:${acc};">${st}</span><span class="dash-sub">day streak</span></div>
+      <div style="text-align:right;"><span class="dash-mid">${wk}</span><span class="dash-sub">this week</span></div>
+    </div>
+    <div class="heat">${cells}</div>
+    <div class="dash-sub" style="margin-top:6px;">last 4 weeks</div>
+    <button class="dash-flavor" onclick="cycleFlavor('${s.id}')">Habit view · tap to change</button>
+  </div>`;
+  h+=`<p class="eyebrow">Habits</p><div class="sec-card">`;
+  for(const x of s.subs){
+    const es=secEntries(s.id).filter(e=>e.sub===x.id);
+    const dset=new Set(es.map(e=>dayKey(e.ts)));
+    const sst=subStreak(s.id,x.id);
+    const swk=es.filter(e=>e.ts>Date.now()-7*864e5).length;
+    const dots=[...Array(7)].map((_,i)=>{const d=new Date(); d.setDate(d.getDate()-(6-i)); return dset.has(dayKey(d.getTime()));});
+    h+=swipeWrapX(`renameSub('${s.id}','${x.id}')`,`delSub('${s.id}','${x.id}')`,
+      `<button class="swipe-content sub-row" style="padding:11px 14px; gap:10px;" onclick="subFilter={sec:'${s.id}',sub:'${x.id}'};render()">
+        <span style="flex:1; min-width:0; text-align:left;">${esc(x.name)}
+          <span class="sub-line">${sst?sst+"d streak · ":""}${swk} this week</span></span>
+        <span class="mini-dots">${dots.map(b=>`<i style="background:${b?acc:"transparent"}; border-color:${acc};"></i>`).join("")}</span>
+      </button>`);
+  }
+  h+=`<button class="sub-row" style="color:var(--mut);" onclick="addSub('${s.id}')"><i class="ti ti-plus" style="font-size:13px;margin-right:6px;"></i>Add habit</button></div>`;
+  const items=secEntries(s.id).sort((x,y)=>y.ts-x.ts).slice(0,15);
+  h+=`<p class="eyebrow">Recent</p>`;
+  h+=items.length?items.map(e=>e.type==="task"&&!e.done?taskRow(e):logRow(e)).join(""):`<p class="empty">Nothing yet. Log a habit below.</p>`;
+  return h;
+}
 function renderSecPage(){
   const s=db.sections.find(x=>x.id===secPage);
   if(!s){secPage=null; return renderSections();}
+  const f=flavorOf(s);
+  if(f==="ledger") return renderLedgerPage(s);
+  if(f==="habit") return renderHabitPage(s);
   let h=`<button class="ghost-row" onclick="secPage=null;render()"><i class="ti ti-arrow-left"></i>Sections</button>`;
   h+=`<div style="margin:0 -12px;">${renderDash(s)}</div>`;
   h+=`<p class="eyebrow">Subsections</p><div class="sec-card">`;
