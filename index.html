@@ -131,6 +131,8 @@
   @keyframes fade{from{opacity:0;} to{opacity:1;}}
   main.swap{animation:viewfade .3s cubic-bezier(.22,1,.36,1);}
   @keyframes viewfade{from{opacity:0; transform:translateY(12px);} to{opacity:1; transform:none;}}
+  main.appin{animation:appin .32s cubic-bezier(.22,1,.36,1);}
+  @keyframes appin{from{opacity:0; transform:translateX(26px);} to{opacity:1; transform:none;}}
   .bars div{transform-origin:bottom; animation:grow .55s cubic-bezier(.22,1,.36,1);}
   @keyframes grow{from{transform:scaleY(0);} to{transform:scaleY(1);}}
   .checkbox{transition:background-color .2s ease, border-color .2s ease;}
@@ -218,10 +220,10 @@
       <button id="micBtn" class="mic" aria-label="Voice input" onclick="toggleMic()"><i class="ti ti-microphone"></i></button>
       <button class="send" aria-label="Add" onclick="submitCapture()"><i class="ti ti-arrow-up"></i></button>
     </div>
-    <nav class="nav">
-      <button id="nav-today" class="on" onclick="go('today')"><i class="ti ti-sun"></i>Today</button>
-      <button id="nav-sections" onclick="go('sections')"><i class="ti ti-category"></i>Sections</button>
-      <button id="nav-review" onclick="go('review')"><i class="ti ti-chart-bar"></i>Review</button>
+    <nav class="nav" id="navBar">
+      <button class="on" onclick="go('today')"><i class="ti ti-sun"></i>Today</button>
+      <button onclick="go('sections')"><i class="ti ti-category"></i>Sections</button>
+      <button onclick="go('review')"><i class="ti ti-chart-bar"></i>Review</button>
     </nav>
   </div>
 </div>
@@ -515,20 +517,47 @@ function streak(){
 }
 
 /* ---------- views ---------- */
-let view="today", openSec=null, subFilter=null, secPage=null;
-function go(v){
-  view=v; subFilter=null; secPage=null;
+let view="today", openSec=null, subFilter=null, secPage=null, secTab="main";
+const PLACEHOLDERS={ledger:"Add an expense, income, a bill…", habit:"Log a habit — ran, gym, slept…",
+  timeline:"Add a deadline or task…", contact:"Log a call, a catch-up…", journal:"Write a thought…"};
+function animMain(cls){
   const m=document.getElementById("main");
-  m.classList.remove("swap"); void m.offsetWidth; m.classList.add("swap");
-  render();
+  m.classList.remove("swap","appin"); void m.offsetWidth; m.classList.add(cls);
+}
+function go(v){
+  view=v; subFilter=null; secPage=null; secTab="main";
+  animMain("swap"); render();
+}
+function openSection(id){secPage=id; secTab="main"; subFilter=null; animMain("appin"); render();}
+function closeSection(){secPage=null; secTab="main"; subFilter=null; animMain("swap"); render();}
+function secGo(t){secTab=t; subFilter=null; animMain("swap"); render();}
+function renderNav(sp){
+  const nav=document.getElementById("navBar");
+  if(!sp){
+    nav.innerHTML=`
+      <button class="${view==='today'?'on':''}" onclick="go('today')"><i class="ti ti-sun"></i>Today</button>
+      <button class="${view==='sections'?'on':''}" onclick="go('sections')"><i class="ti ti-category"></i>Sections</button>
+      <button class="${view==='review'?'on':''}" onclick="go('review')"><i class="ti ti-chart-bar"></i>Review</button>`;
+  }else{
+    const acc=accOf(sp);
+    nav.innerHTML=`
+      <button onclick="closeSection()"><i class="ti ti-arrow-left"></i>Home</button>
+      <button class="${secTab==='main'?'on':''}" style="color:${secTab==='main'?acc:'var(--faint)'};" onclick="secGo('main')"><i class="ti ${sp.icon}"></i>Overview</button>
+      <button class="${secTab==='history'?'on':''}" style="color:${secTab==='history'?acc:'var(--faint)'};" onclick="secGo('history')"><i class="ti ti-history"></i>History</button>`;
+  }
 }
 function render(){
-  ["today","sections","review"].forEach(v=>document.getElementById("nav-"+v).classList.toggle("on",v===view));
+  const sp=(view==="sections"&&secPage)?db.sections.find(x=>x.id===secPage):null;
+  renderNav(sp);
   const s=streak();
   document.getElementById("streakChip").textContent=s>0?s+"-day streak":"";
   const main=document.getElementById("main");
   const title=document.getElementById("pageTitle"), sub=document.getElementById("pageSub");
   title.style.color=""; document.querySelector(".send").style.background="";
+  const wash=sp?`color-mix(in srgb, ${accOf(sp)} 6%, var(--cream))`:"";
+  document.body.style.background=wash;
+  document.querySelector(".dock").style.background=wash||"var(--cream)";
+  document.getElementById("captureInput").placeholder=sp?(PLACEHOLDERS[flavorOf(sp)]||"Add to "+sp.name+"…"):"Speak or type anything…";
   if(view==="today"){
     title.textContent=new Date().toLocaleDateString([], {weekday:"long", month:"long", day:"numeric"});
     const open=db.entries.filter(e=>e.type==="task"&&!e.done);
@@ -536,7 +565,6 @@ function render(){
     sub.textContent=open.length+" to do · "+logsToday.length+" logged today";
     main.innerHTML=renderToday(open,logsToday);
   }else if(view==="sections"){
-    const sp=secPage?db.sections.find(x=>x.id===secPage):null;
     title.textContent=sp?sp.name:"Sections";
     sub.textContent=sp?FLAVOR_LABEL[flavorOf(sp)]+" · "+secEntries(sp.id).length+" entries":"";
     main.innerHTML=subFilter?renderSubHistory():(secPage?renderSecPage():renderSections());
@@ -702,7 +730,7 @@ function renderSections(){
   let h="";
   for(const s of db.sections){
     h+=swipeWrapX(`renameSection('${s.id}')`,`delSection('${s.id}')`,
-      `<button class="swipe-content launch" onclick="secPage='${s.id}';render()">
+      `<button class="swipe-content launch" onclick="openSection('${s.id}')">
         <span class="launch-ic" style="background:color-mix(in srgb, ${accOf(s)} 14%, transparent); color:${accOf(s)};"><i class="ti ${s.icon}"></i></span>
         <span style="min-width:0; flex:1;">
           <span class="launch-name">${esc(s.name)}</span>
@@ -727,10 +755,36 @@ function subStreak(secId,subId){
   while(dset.has(dayKey(d.getTime()))){st++; d.setDate(d.getDate()-1);}
   return st;
 }
+function isIncomeSubOf(x){return /income|salary|earn|refund|cashback/i.test(x.name);}
+function ledgerTxns(s,limit){
+  const acc=accOf(s);
+  const items=secEntries(s.id).sort((x,y)=>y.ts-x.ts).slice(0,limit);
+  let h="", lastMonth="";
+  for(const e of items){
+    const mk=new Date(e.ts).toLocaleDateString([], {month:"long", year:"numeric"});
+    if(mk!==lastMonth){
+      lastMonth=mk;
+      const mtot=secEntries(s.id).filter(x=>x.amount!=null&&new Date(x.ts).toLocaleDateString([],{month:"long",year:"numeric"})===mk).reduce((t,x)=>t+x.amount,0);
+      h+=`<div class="ledger-month"><span>${mk}</span><span>${mtot?"$"+Math.round(mtot).toLocaleString():""}</span></div>`;
+    }
+    const x=s.subs.find(y=>y.id===e.sub);
+    const inc=x&&isIncomeSubOf(x);
+    h+=swipeWrap(e.id,`<div class="swipe-content card row" style="padding:11px 15px;">
+      ${e.type==="task"&&!e.done?`<button class="checkbox" aria-label="Done" onclick="toggleDone('${e.id}',this)"></button>`:""}
+      <div style="min-width:0; flex:1;">
+        <div style="font-size:14px;">${e.done?"<del>":""}${esc(e.text)}${e.done?"</del>":""}</div>
+        <div class="sub-line">${x?esc(x.name):""} · ${fmtDay(e.ts)}${e.type==="task"&&!e.done&&e.due?" · "+dueLabel(e):""}</div>
+      </div>
+      ${e.amount!=null?`<span class="ledger-amt" style="color:${inc?acc:"var(--ink)"};">${inc?"+":""}$${e.amount.toLocaleString()}</span>`:""}
+    </div>`);
+  }
+  if(!items.length) h+=`<p class="empty">No transactions yet. Anything with a $ lands here.</p>`;
+  return h;
+}
 function renderLedgerPage(s){
   const acc=accOf(s);
-  const isIncomeSub=x=>/income|salary|earn|refund|cashback/i.test(x.name);
-  let h=backRow();
+  const isIncomeSub=isIncomeSubOf;
+  let h="";
   h+=`<div style="margin:0 -12px;">${renderDash(s)}</div>`;
   const a=new Date(new Date().getFullYear(),new Date().getMonth(),1).getTime();
   const monthEs=secEntries(s.id).filter(e=>e.amount!=null&&e.ts>=a);
@@ -749,32 +803,13 @@ function renderLedgerPage(s){
     const c=db.entries.filter(e=>e.sec===s.id&&e.sub===x.id).length;
     return `<button class="chip" onclick="subFilter={sec:'${s.id}',sub:'${x.id}'};render()">${esc(x.name)} · ${c}</button>`;
   }).join("")+`<button class="chip" onclick="addSub('${s.id}')">+</button></div>`;
-  const items=secEntries(s.id).sort((x,y)=>y.ts-x.ts);
-  let lastMonth="";
-  for(const e of items){
-    const mk=new Date(e.ts).toLocaleDateString([], {month:"long", year:"numeric"});
-    if(mk!==lastMonth){
-      lastMonth=mk;
-      const mtot=items.filter(x=>x.amount!=null&&new Date(x.ts).toLocaleDateString([],{month:"long",year:"numeric"})===mk).reduce((t,x)=>t+x.amount,0);
-      h+=`<div class="ledger-month"><span>${mk}</span><span>${mtot?"$"+Math.round(mtot).toLocaleString():""}</span></div>`;
-    }
-    const x=s.subs.find(y=>y.id===e.sub);
-    const inc=x&&isIncomeSub(x);
-    h+=swipeWrap(e.id,`<div class="swipe-content card row" style="padding:11px 15px;">
-      ${e.type==="task"&&!e.done?`<button class="checkbox" aria-label="Done" onclick="toggleDone('${e.id}',this)"></button>`:""}
-      <div style="min-width:0; flex:1;">
-        <div style="font-size:14px;">${e.done?"<del>":""}${esc(e.text)}${e.done?"</del>":""}</div>
-        <div class="sub-line">${x?esc(x.name):""} · ${fmtDay(e.ts)}${e.type==="task"&&!e.done&&e.due?" · "+dueLabel(e):""}</div>
-      </div>
-      ${e.amount!=null?`<span class="ledger-amt" style="color:${inc?acc:"var(--ink)"};">${inc?"+":""}$${e.amount.toLocaleString()}</span>`:""}
-    </div>`);
-  }
-  if(!items.length) h+=`<p class="empty">No transactions yet. Anything with a $ lands here.</p>`;
+  h+=ledgerTxns(s,8);
+  if(secEntries(s.id).length>8) h+=`<p class="empty" style="padding:4px;">Everything else lives in the History tab below.</p>`;
   return h;
 }
 function renderHabitPage(s){
   const acc=accOf(s);
-  let h=backRow();
+  let h="";
   const counts={};
   secEntries(s.id).forEach(e=>{
     counts[dayKey(e.ts)]=(counts[dayKey(e.ts)]||0)+1;
@@ -812,18 +847,24 @@ function renderHabitPage(s){
       </button>`);
   }
   h+=`<button class="sub-row" style="color:var(--mut);" onclick="addSub('${s.id}')"><i class="ti ti-plus" style="font-size:13px;margin-right:6px;"></i>Add habit</button></div>`;
-  const items=secEntries(s.id).sort((x,y)=>y.ts-x.ts).slice(0,15);
+  const items=secEntries(s.id).sort((x,y)=>y.ts-x.ts).slice(0,8);
   h+=`<p class="eyebrow">Recent</p>`;
   h+=items.length?items.map(e=>e.type==="task"&&!e.done?taskRow(e):logRow(e)).join(""):`<p class="empty">Nothing yet. Log a habit below.</p>`;
   return h;
 }
+function renderSecHistory(s){
+  if(flavorOf(s)==="ledger") return ledgerTxns(s,Infinity);
+  const items=secEntries(s.id).sort((a,b)=>b.ts-a.ts);
+  return items.length?items.map(e=>e.type==="task"&&!e.done?taskRow(e):logRow(e)).join(""):`<p class="empty">Nothing here yet.</p>`;
+}
 function renderSecPage(){
   const s=db.sections.find(x=>x.id===secPage);
   if(!s){secPage=null; return renderSections();}
+  if(secTab==="history") return renderSecHistory(s);
   const f=flavorOf(s);
   if(f==="ledger") return renderLedgerPage(s);
   if(f==="habit") return renderHabitPage(s);
-  let h=`<button class="ghost-row" onclick="secPage=null;render()"><i class="ti ti-arrow-left"></i>Sections</button>`;
+  let h="";
   h+=`<div style="margin:0 -12px;">${renderDash(s)}</div>`;
   h+=`<p class="eyebrow">Subsections</p><div class="sec-card">`;
   for(const x of s.subs){
