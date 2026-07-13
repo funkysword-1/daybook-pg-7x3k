@@ -438,9 +438,12 @@ function taskRow(e){
   </div>`;
 }
 function logRow(e){
-  return `<div class="tint-card">
-    <div style="font-size:14px;">${esc(e.text)}</div>
-    <div class="sub-line">${esc(pathOf(e))} · ${fmtTime(e.doneTs||e.ts)}${e.amount!=null?" · $"+e.amount.toLocaleString():""}</div>
+  return `<div class="tint-card" style="display:flex;align-items:flex-start;gap:8px;">
+    <div style="flex:1;min-width:0;">
+      <div style="font-size:14px;">${esc(e.text)}</div>
+      <div class="sub-line">${esc(pathOf(e))} · ${fmtTime(e.doneTs||e.ts)}${e.amount!=null?" · $"+e.amount.toLocaleString():""}</div>
+    </div>
+    <button class="icon-btn" aria-label="Delete" onclick="delEntry('${e.id}')"><i class="ti ti-x" style="font-size:13px;"></i></button>
   </div>`;
 }
 function renderToday(open,logs){
@@ -502,8 +505,10 @@ function renderSubHistory(){
   let h=`<button class="ghost-row" onclick="subFilter=null;render()"><i class="ti ti-arrow-left"></i>${esc(s.name)}</button>
     <h2 style="margin:4px 0 12px;">${esc(sub.name)}</h2>`;
   h+=items.length?items.map(e=>e.type==="task"&&!e.done?taskRow(e):
-    `<div class="tint-card"><div style="font-size:14px;">${e.done?"<del>":""}${esc(e.text)}${e.done?"</del>":""}</div>
-     <div class="sub-line">${fmtDay(e.ts)}${e.amount!=null?" · $"+e.amount.toLocaleString():""}</div></div>`).join("")
+    `<div class="tint-card" style="display:flex;align-items:flex-start;gap:8px;">
+     <div style="flex:1;min-width:0;"><div style="font-size:14px;">${e.done?"<del>":""}${esc(e.text)}${e.done?"</del>":""}</div>
+     <div class="sub-line">${fmtDay(e.ts)}${e.amount!=null?" · $"+e.amount.toLocaleString():""}</div></div>
+     <button class="icon-btn" aria-label="Delete" onclick="delEntry('${e.id}')"><i class="ti ti-x" style="font-size:13px;"></i></button></div>`).join("")
     :`<p class="empty">Nothing here yet.</p>`;
   return h;
 }
