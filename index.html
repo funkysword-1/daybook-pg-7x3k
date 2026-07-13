@@ -16,6 +16,8 @@
     --ink:#2E3A2F; --ink2:#40513F; --mut:#79856F; --faint:#9B9E8C;
     --sage:#5F7A61; --sage-lt:#A2B199; --line:#D5CFBF; --line2:#C2CBB7;
     --warn:#A86832; --scrim:rgba(46,58,47,.28);
+    --acc-ledger:#A9714B; --acc-habit:#5F7A61; --acc-timeline:#5B7A8C;
+    --acc-contact:#8A6E85; --acc-journal:#7C8A76;
     --serif: ui-serif, "New York", Georgia, serif;
     --sans: -apple-system, "SF Pro Text", "Segoe UI", sans-serif;
   }
@@ -24,6 +26,8 @@
     --ink:#E3E1D4; --ink2:#C6CBB8; --mut:#8C9583; --faint:#666D5E;
     --sage:#8CA88C; --sage-lt:#57654F; --line:#363B32; --line2:#414738;
     --warn:#D09A62; --scrim:rgba(0,0,0,.5);
+    --acc-ledger:#C89A78; --acc-habit:#8CA88C; --acc-timeline:#8FAEBF;
+    --acc-contact:#B497AE; --acc-journal:#8C9583;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
   html,body{margin:0; padding:0; background:var(--cream); color:var(--ink);
@@ -151,6 +155,18 @@
   .sa.del{background:#A94F3F;}
   .swipe.flat{border-radius:0; margin-bottom:0;}
   .swipe-content.sec-head,.swipe-content.sub-row{background:var(--card);}
+  /* dashboards */
+  .dash{border-radius:14px; margin:2px 12px 12px; padding:12px 14px;}
+  .dash-row{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:4px;}
+  .dash-big{font-size:24px; font-weight:500; font-family:var(--serif); margin-right:6px;}
+  .dash-mid{font-size:17px; font-weight:500; margin-right:6px;}
+  .dash-sub{font-size:12px; color:var(--mut);}
+  .dash-bars{display:flex; gap:5px; align-items:flex-end; height:40px; margin-top:8px;}
+  .dash-bars div{flex:1; border-radius:3px 3px 0 0; opacity:.85; transform-origin:bottom; animation:grow .5s cubic-bezier(.22,1,.36,1);}
+  .dash-dots{display:flex; gap:8px; margin:10px 0 4px;}
+  .dash-dots span{width:14px; height:14px; border-radius:99px; border:1.5px solid;}
+  .dash-line{display:flex; justify-content:space-between; gap:10px; font-size:13px; padding:4px 0; color:var(--ink2); min-width:0;}
+  .dash-flavor{font-size:11px; color:var(--mut); margin-top:8px; display:block;}
 </style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
 </head>
@@ -237,11 +253,16 @@ const DEFAULTS={
   ]
 };
 let db=load();
+function migrate(d){
+  const fl={finance:"ledger",health:"habit",school:"timeline",people:"contact",notes:"journal",tech:"journal",home:"habit"};
+  d.sections.forEach(s=>{if(!s.flavor) s.flavor=fl[s.id]||"journal";});
+  return d;
+}
 function load(){
   try{const raw=localStorage.getItem(KEY); if(raw){const d=JSON.parse(raw);
     for(const k of Object.keys(DEFAULTS)) if(!(k in d)) d[k]=structuredClone(DEFAULTS[k]);
-    return d;}}catch(e){}
-  return structuredClone(DEFAULTS);
+    return migrate(d);}}catch(e){}
+  return migrate(structuredClone(DEFAULTS));
 }
 function save(){localStorage.setItem(KEY,JSON.stringify(db));}
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
@@ -539,6 +560,88 @@ function monthTotal(secId,subId){
   return db.entries.filter(e=>e.sec===secId&&e.sub===subId&&e.amount!=null&&new Date(e.ts).getMonth()===now.getMonth()&&new Date(e.ts).getFullYear()===now.getFullYear())
     .reduce((a,e)=>a+e.amount,0);
 }
+/* ---------- dashboards ---------- */
+const FLAVORS=["ledger","habit","timeline","contact","journal"];
+const FLAVOR_LABEL={ledger:"Ledger",habit:"Habit",timeline:"Timeline",contact:"People",journal:"Journal"};
+function flavorOf(s){return s.flavor||"journal";}
+function accOf(s){return "var(--acc-"+flavorOf(s)+")";}
+function secEntries(id){return db.entries.filter(e=>e.sec===id);}
+function monthSum(id,offset){
+  const now=new Date();
+  const a=new Date(now.getFullYear(),now.getMonth()-offset,1).getTime();
+  const b=new Date(now.getFullYear(),now.getMonth()-offset+1,1).getTime();
+  return secEntries(id).filter(e=>e.amount!=null&&e.ts>=a&&e.ts<b).reduce((x,e)=>x+e.amount,0);
+}
+function cycleFlavor(id){
+  const s=db.sections.find(x=>x.id===id);
+  s.flavor=FLAVORS[(FLAVORS.indexOf(flavorOf(s))+1)%FLAVORS.length];
+  save(); render();
+}
+function renderDash(s){
+  const f=flavorOf(s), acc=accOf(s);
+  let inner="";
+  if(f==="ledger"){
+    const cur=monthSum(s.id,0), prev=monthSum(s.id,1);
+    const bars=[...Array(6)].map((_,i)=>monthSum(s.id,5-i));
+    const mx=Math.max(...bars,1);
+    inner=`<div class="dash-row">
+        <div><span class="dash-big" style="color:${acc};">$${Math.round(cur).toLocaleString()}</span><span class="dash-sub">this month</span></div>
+        <div style="text-align:right;"><span class="dash-mid">$${Math.round(prev).toLocaleString()}</span><span class="dash-sub">last month</span></div>
+      </div>
+      <div class="dash-bars">${bars.map(b=>`<div style="height:${Math.max(8,Math.round(b/mx*100))}%;background:${acc};"></div>`).join("")}</div>
+      <div class="dash-sub" style="margin-top:4px;">last 6 months</div>`;
+  }else if(f==="habit"){
+    const days=[...Array(7)].map((_,i)=>{const d=new Date(); d.setDate(d.getDate()-(6-i)); return dayKey(d.getTime());});
+    const set=new Set(); secEntries(s.id).forEach(e=>{set.add(dayKey(e.ts)); if(e.doneTs) set.add(dayKey(e.doneTs));});
+    let st=0;{const d=new Date(); if(!set.has(dayKey(d.getTime()))) d.setDate(d.getDate()-1);
+      while(set.has(dayKey(d.getTime()))){st++; d.setDate(d.getDate()-1);}}
+    const wk=secEntries(s.id).filter(e=>e.ts>Date.now()-7*864e5).length;
+    inner=`<div class="dash-row">
+        <div><span class="dash-big" style="color:${acc};">${st}</span><span class="dash-sub">day streak</span></div>
+        <div style="text-align:right;"><span class="dash-mid">${wk}</span><span class="dash-sub">this week</span></div>
+      </div>
+      <div class="dash-dots">${days.map(k=>`<span style="border-color:${acc};background:${set.has(k)?acc:"transparent"};"></span>`).join("")}</div>
+      <div class="dash-sub">last 7 days</div>`;
+  }else if(f==="timeline"){
+    const open=secEntries(s.id).filter(e=>e.type==="task"&&!e.done&&e.due).sort((a,b)=>a.due-b.due);
+    const od=open.filter(e=>e.due<Date.now()).length;
+    inner=`<div class="dash-row">
+        <div><span class="dash-big" style="color:${acc};">${open.length}</span><span class="dash-sub">scheduled</span></div>
+        ${od?`<div style="text-align:right;"><span class="dash-mid" style="color:var(--warn);">${od}</span><span class="dash-sub">overdue</span></div>`:""}
+      </div>`;
+    inner+=open.slice(0,3).map(e=>{
+      const days=Math.ceil((e.due-Date.now())/864e5);
+      const lbl=days<0?Math.abs(days)+"d overdue":days<=0?"today":"in "+days+"d";
+      return `<div class="dash-line"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(e.text)}</span><span style="color:${days<0?"var(--warn)":acc};flex-shrink:0;">${lbl}</span></div>`;
+    }).join("");
+    if(!open.length) inner+=`<div class="dash-sub">Nothing scheduled.</div>`;
+  }else if(f==="contact"){
+    const rows=s.subs.map(x=>{
+      const es=secEntries(s.id).filter(e=>e.sub===x.id);
+      const last=es.length?Math.max(...es.map(e=>e.doneTs||e.ts)):null;
+      return {name:x.name,last};
+    }).sort((a,b)=>(a.last||0)-(b.last||0));
+    inner=rows.map(r=>{
+      const days=r.last?Math.floor((Date.now()-r.last)/864e5):null;
+      const lbl=r.last===null?"no entries yet":days===0?"today":days+"d ago";
+      return `<div class="dash-line"><span>${esc(r.name)}</span><span style="color:${days!==null&&days>13?"var(--warn)":acc};">${lbl}</span></div>`;
+    }).join("");
+  }else{
+    const tot=secEntries(s.id).length;
+    const wk=secEntries(s.id).filter(e=>e.ts>Date.now()-7*864e5).length;
+    const last=tot?Math.max(...secEntries(s.id).map(e=>e.ts)):null;
+    inner=`<div class="dash-row">
+        <div><span class="dash-big" style="color:${acc};">${wk}</span><span class="dash-sub">this week</span></div>
+        <div style="text-align:right;"><span class="dash-mid">${tot}</span><span class="dash-sub">all time</span></div>
+      </div>
+      ${last?`<div class="dash-sub">last entry ${fmtDay(last)}</div>`:""}`;
+  }
+  return `<div class="dash" style="background:color-mix(in srgb, ${acc} 10%, transparent);">
+    ${inner}
+    <button class="dash-flavor" onclick="cycleFlavor('${s.id}')">${FLAVOR_LABEL[f]} view · tap to change</button>
+  </div>`;
+}
+
 let manage=false;
 function renderSections(){
   if(manage) return renderManage();
@@ -550,12 +653,13 @@ function renderSections(){
     h+=`<div class="sec-card">`;
     h+=swipeWrapX(`renameSection('${s.id}')`,`delSection('${s.id}')`,
       `<button class="swipe-content sec-head" onclick="openSec=openSec==='${s.id}'?null:'${s.id}';render()">
-        <i class="ti ${s.icon}" style="font-size:18px;color:var(--sage);"></i>
+        <i class="ti ${s.icon}" style="font-size:18px;color:${accOf(s)};"></i>
         <span class="name">${esc(s.name)}</span>
         <span class="meta">${secTotal>0?"$"+Math.round(secTotal).toLocaleString()+" this month · ":""}${count} entr${count===1?"y":"ies"}</span>
         <i class="ti ti-chevron-${isOpen?"up":"down"}" style="font-size:14px;color:var(--sage-lt);"></i>
       </button>`);
     if(isOpen){
+      h+=renderDash(s);
       for(const x of s.subs){
         const c=db.entries.filter(e=>e.sec===s.id&&e.sub===x.id).length;
         const t=monthTotal(s.id,x.id);
