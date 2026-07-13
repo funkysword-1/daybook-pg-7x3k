@@ -207,6 +207,26 @@
   .skin-habit, .skin-habit button, .skin-habit input{font-family:ui-rounded, -apple-system, sans-serif;}
   .hlog{width:36px; height:36px; border-radius:99px; display:flex; align-items:center;
     justify-content:center; color:#F7F4EC; font-size:17px; flex-shrink:0;}
+  .people-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:6px;}
+  .person{background:var(--card); border-radius:18px; padding:14px 12px 12px; display:flex;
+    flex-direction:column; align-items:center; gap:9px;
+    box-shadow:0 1px 2px rgba(56,66,50,.05), 0 3px 12px rgba(56,66,50,.06);}
+  html[data-theme="dark"] .person{box-shadow:none; border:0.5px solid var(--line);}
+  .p-open{display:flex; flex-direction:column; align-items:center; gap:5px; width:100%;}
+  .p-avatar{width:48px; height:48px; border-radius:99px; display:flex; align-items:center;
+    justify-content:center; font-weight:500; font-size:16px;}
+  .p-name{font-size:14px; font-weight:500;}
+  .p-last{font-size:12px;}
+  .p-log{font-size:12px; color:#F7F4EC; border-radius:99px; padding:6px 12px;
+    display:flex; gap:5px; align-items:center;}
+  .diary-title{font-family:var(--serif); font-size:30px; font-weight:500; margin:8px 0 0;}
+  .diary-sub{font-size:13px; color:var(--mut); margin:2px 0 0;}
+  .diary-day{font-family:var(--serif); font-style:italic; font-size:15px; color:var(--mut);
+    margin:18px 0 8px; border-bottom:0.5px solid var(--line); padding-bottom:6px;}
+  .diary-entry{padding:8px 2px 10px;}
+  .diary-text{font-family:var(--serif); font-size:16px; line-height:1.65; margin:0;}
+  .diary-meta{font-size:11px; color:var(--faint); margin:4px 0 0;}
+  .diary .swipe{border-radius:10px;}
 </style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
 </head>
@@ -270,9 +290,13 @@ const DEFAULTS={
       {id:"income",name:"Income",kw:["salary","paycheck","stipend","refund","deposit","earned","got paid","cashback"]}]},
     {id:"health",name:"Health",icon:"ti-heart",subs:[
       {id:"exercise",name:"Exercise",kw:["run","ran","running","gym","workout","worked out","lift","lifted","walk","walked","yoga","swim","swam","cycling","cardio","exercise","miles","steps"]},
-      {id:"food",name:"Food",kw:["ate","eating","meal","lunch","dinner","breakfast","protein","diet","snack","cooked","calories","fasting"]},
+      {id:"food",name:"Nutrition",kw:["protein","diet","calories","fasting","nutrition","vitamins"]},
       {id:"sleep",name:"Sleep",kw:["sleep","slept","nap","woke","insomnia","bedtime"]},
-      {id:"medical",name:"Medical",kw:["doctor","dentist","medicine","meds","pharmacy","appointment","sick","fever","headache","vitamins","prescription"]}]},
+      {id:"medical",name:"Medical",kw:["doctor","dentist","medicine","meds","pharmacy","appointment","sick","fever","headache","prescription"]}]},
+    {id:"food",name:"Food",icon:"ti-tools-kitchen-2",subs:[
+      {id:"meals",name:"Meals",kw:["ate","eating","meal","lunch","dinner","breakfast","brunch","cooked","recipe","snack","leftovers"]},
+      {id:"groceries",name:"Groceries",kw:["groceries","grocery","heb","costco","walmart","trader joe"]},
+      {id:"eatingout",name:"Eating out",kw:["restaurant","takeout","take out","ordered food","doordash","dined","dine","cafe","coffee shop","ate out"]}]},
     {id:"tech",name:"Tech",icon:"ti-device-laptop",subs:[
       {id:"laptop",name:"Laptop",kw:["laptop","computer","pc","mac","macbook","keyboard","monitor","backup","back up"]},
       {id:"phone",name:"Phone",kw:["phone","iphone","android","sim","screen protector"]},
@@ -294,7 +318,15 @@ const DEFAULTS={
 };
 let db=load();
 function migrate(d){
-  const fl={finance:"ledger",health:"habit",school:"timeline",people:"contact",notes:"journal",tech:"journal",home:"habit"};
+  const fl={finance:"ledger",health:"habit",food:"habit",school:"timeline",people:"contact",notes:"journal",tech:"journal",home:"habit"};
+  if(!d.sections.some(s=>s.id==="food")){
+    const def=DEFAULTS.sections.find(s=>s.id==="food");
+    const i=d.sections.findIndex(s=>s.id==="health");
+    d.sections.splice(i>=0?i+1:d.sections.length,0,structuredClone(def));
+    const health=d.sections.find(s=>s.id==="health");
+    if(health){const hf=health.subs.find(x=>x.id==="food");
+      if(hf){hf.name="Nutrition"; hf.kw=["protein","diet","calories","fasting","nutrition","vitamins"];}}
+  }
   d.sections.forEach(s=>{if(!s.flavor) s.flavor=fl[s.id]||"journal";});
   return d;
 }
@@ -579,7 +611,7 @@ function render(){
   document.body.style.background=wash;
   document.querySelector("header.top").style.display=sp?"none":"";
   document.querySelector(".dock").style.background=wash||"var(--cream)";
-  document.getElementById("captureInput").placeholder=sp?(PLACEHOLDERS[flavorOf(sp)]||"Add to "+sp.name+"…"):"Speak or type anything…";
+  document.getElementById("captureInput").placeholder=sp?(sp.id==="food"?"Log a meal, groceries, takeout…":(PLACEHOLDERS[flavorOf(sp)]||"Add to "+sp.name+"…")):"Speak or type anything…";
   if(view==="today"){
     title.textContent=new Date().toLocaleDateString([], {weekday:"long", month:"long", day:"numeric"});
     const open=db.entries.filter(e=>e.type==="task"&&!e.done);
@@ -896,6 +928,111 @@ function renderSecHistory(s){
   const items=secEntries(s.id).sort((a,b)=>b.ts-a.ts);
   return items.length?items.map(e=>e.type==="task"&&!e.done?taskRow(e):logRow(e)).join(""):`<p class="empty">Nothing here yet.</p>`;
 }
+function chipsRow(s){
+  return `<div class="chip-row">`+s.subs.map(x=>{
+    const c=db.entries.filter(e=>e.sec===s.id&&e.sub===x.id).length;
+    return `<button class="chip" onclick="subFilter={sec:'${s.id}',sub:'${x.id}'};render()">${esc(x.name)} · ${c}</button>`;
+  }).join("")+`<button class="chip" onclick="addSub('${s.id}')">+</button></div>`;
+}
+function renderTimelinePage(s){
+  const acc=accOf(s), nowT=Date.now();
+  const es=secEntries(s.id);
+  const open=es.filter(e=>e.type==="task"&&!e.done).sort((a,b)=>(a.due||Infinity)-(b.due||Infinity));
+  const dated=open.filter(e=>e.due);
+  const next=dated.find(e=>e.due>=nowT);
+  const overdue=dated.filter(e=>e.due<nowT);
+  let big, sub2;
+  if(next){const d=Math.ceil((next.due-nowT)/864e5); big=d<=0?"today":d+" day"+(d===1?"":"s"); sub2="until: "+next.text;}
+  else{big=open.length?String(open.length):"clear"; sub2=open.length?"undated tasks waiting":"nothing pending";}
+  let h=`<div class="hero" style="background:${acc};">
+    <div class="h-label"><i class="ti ${s.icon}"></i>${esc(s.name)}</div>
+    <div class="h-big">${esc(big)}</div>
+    <div class="h-sub">${esc(sub2)}</div>
+    ${overdue.length?`<div class="h-sub" style="margin-top:6px;">${overdue.length} overdue</div>`:""}
+  </div>
+  <button class="dash-flavor" onclick="cycleFlavor('${s.id}')" style="margin:0 4px 10px;">Timeline view · tap to change</button>`;
+  h+=chipsRow(s);
+  const groups=[
+    ["Overdue",e=>e.due&&e.due<nowT],
+    ["Today",e=>e.due&&e.due>=nowT&&dayKey(e.due)===todayKey()],
+    ["This week",e=>e.due&&e.due>=nowT&&e.due<nowT+7*864e5&&dayKey(e.due)!==todayKey()],
+    ["Later",e=>e.due&&e.due>=nowT+7*864e5],
+    ["Whenever",e=>!e.due]
+  ];
+  for(const [label,fn] of groups){
+    const items=open.filter(fn);
+    if(items.length) h+=`<p class="eyebrow">${label}</p>`+items.map(taskRow).join("");
+  }
+  if(!open.length) h+=`<p class="empty">Nothing on the agenda. Speak a deadline below.</p>`;
+  const rest=es.filter(e=>!(e.type==="task"&&!e.done)).sort((a,b)=>b.ts-a.ts).slice(0,5);
+  if(rest.length) h+=`<p class="eyebrow">Done & notes</p>`+rest.map(logRow).join("");
+  return h;
+}
+function quickLogContact(secId,subId,el){
+  const s=db.sections.find(x=>x.id===secId); if(!s) return;
+  const x=s.subs.find(y=>y.id===subId); if(!x) return;
+  db.entries.push({id:uid(), text:"Caught up with "+x.name, type:"log", sec:secId, sub:subId, ts:Date.now(), done:false, amount:null});
+  save();
+  if(el) el.classList.add("pop");
+  setTimeout(render,240);
+}
+function renderContactPage(s){
+  const acc=accOf(s);
+  const rows=s.subs.map(x=>{
+    const es2=secEntries(s.id).filter(e=>e.sub===x.id);
+    const last=es2.length?Math.max(...es2.map(e=>e.doneTs||e.ts)):null;
+    return {x, last, days:last?Math.floor((Date.now()-last)/864e5):null};
+  }).sort((a,b)=>(a.last||0)-(b.last||0));
+  const fresh=rows.filter(r=>r.days!==null&&r.days<=14).length;
+  let h=`<div class="hero" style="background:${acc};">
+    <div class="h-label"><i class="ti ${s.icon}"></i>${esc(s.name)}</div>
+    <div class="h-big">${fresh} of ${rows.length}</div>
+    <div class="h-sub">in touch these two weeks</div>
+  </div>
+  <button class="dash-flavor" onclick="cycleFlavor('${s.id}')" style="margin:0 4px 10px;">People view · tap to change</button>`;
+  h+=`<div class="people-grid">`+rows.map(r=>{
+    const initials=r.x.name.trim().split(/\s+/).map(w=>w[0]).join("").slice(0,2).toUpperCase();
+    const lbl=r.last===null?"no entries":r.days===0?"today":r.days+"d ago";
+    const stale=r.days!==null&&r.days>13;
+    return `<div class="person">
+      <button class="p-open" onclick="subFilter={sec:'${s.id}',sub:'${r.x.id}'};render()">
+        <span class="p-avatar" style="background:color-mix(in srgb, ${acc} 16%, transparent); color:${acc};">${esc(initials)}</span>
+        <span class="p-name">${esc(r.x.name)}</span>
+        <span class="p-last" style="color:${stale?"var(--warn)":"var(--mut)"};">${lbl}</span>
+      </button>
+      <button class="p-log" style="background:${acc};" onclick="quickLogContact('${s.id}','${r.x.id}',this)"><i class="ti ti-message-circle"></i>caught up</button>
+    </div>`;
+  }).join("")+`</div>`;
+  h+=`<button class="ghost-row" onclick="addSub('${s.id}')"><i class="ti ti-plus"></i>Add person</button>`;
+  const recent=secEntries(s.id).sort((a,b)=>b.ts-a.ts).slice(0,6);
+  if(recent.length) h+=`<p class="eyebrow">Recent</p>`+recent.map(e=>e.type==="task"&&!e.done?taskRow(e):logRow(e)).join("");
+  return h;
+}
+function renderJournalPage(s){
+  const acc=accOf(s);
+  const es=secEntries(s.id).sort((a,b)=>b.ts-a.ts);
+  const wk=es.filter(e=>e.ts>Date.now()-7*864e5).length;
+  let h=`<div class="diary">
+    <p class="diary-title" style="color:${acc};">${esc(s.name)}</p>
+    <p class="diary-sub">${es.length} entr${es.length===1?"y":"ies"} · ${wk} this week</p>
+    <button class="dash-flavor" onclick="cycleFlavor('${s.id}')" style="margin:4px 0 10px;">Journal view · tap to change</button>`;
+  h+=chipsRow(s);
+  let lastDay="";
+  for(const e of es.slice(0,30)){
+    const dk=dayKey(e.ts);
+    if(dk!==lastDay){
+      lastDay=dk;
+      h+=`<p class="diary-day">${new Date(e.ts).toLocaleDateString([], {weekday:"long", month:"long", day:"numeric"})}</p>`;
+    }
+    const sub=s.subs.find(y=>y.id===e.sub);
+    h+=swipeWrap(e.id,`<div class="swipe-content diary-entry" style="background:color-mix(in srgb, ${acc} 6%, var(--cream));">
+      <p class="diary-text">${e.done?"<del>":""}${esc(e.text)}${e.done?"</del>":""}</p>
+      <p class="diary-meta">${sub?esc(sub.name):""} · ${fmtTime(e.ts)}${e.type==="task"&&!e.done?" · to do":""}</p>
+    </div>`);
+  }
+  if(!es.length) h+=`<p class="empty">Blank pages. Write something below.</p>`;
+  return h+`</div>`;
+}
 function renderSecPage(){
   const s=db.sections.find(x=>x.id===secPage);
   if(!s){secPage=null; return renderSections();}
@@ -903,21 +1040,9 @@ function renderSecPage(){
   const f=flavorOf(s);
   if(f==="ledger") return renderLedgerPage(s);
   if(f==="habit") return renderHabitPage(s);
-  let h="";
-  h+=`<div style="margin:0 -12px;">${renderDash(s)}</div>`;
-  h+=`<p class="eyebrow">Subsections</p><div class="sec-card">`;
-  for(const x of s.subs){
-    const c=db.entries.filter(e=>e.sec===s.id&&e.sub===x.id).length;
-    const t=monthTotal(s.id,x.id);
-    h+=swipeWrapX(`renameSub('${s.id}','${x.id}')`,`delSub('${s.id}','${x.id}')`,
-      `<button class="swipe-content sub-row" style="padding-left:14px;" onclick="subFilter={sec:'${s.id}',sub:'${x.id}'};render()">
-      ${esc(x.name)}<span class="meta">${t>0?"$"+Math.round(t).toLocaleString()+" · ":""}${c}</span></button>`);
-  }
-  h+=`<button class="sub-row" style="color:var(--mut);" onclick="addSub('${s.id}')"><i class="ti ti-plus" style="font-size:13px;margin-right:6px;"></i>Add subsection</button></div>`;
-  const items=secEntries(s.id).sort((a,b)=>b.ts-a.ts).slice(0,20);
-  h+=`<p class="eyebrow">Recent</p>`;
-  h+=items.length?items.map(e=>e.type==="task"&&!e.done?taskRow(e):logRow(e)).join(""):`<p class="empty">Nothing here yet. Anything you add now lands in ${esc(s.name)}.</p>`;
-  return h;
+  if(f==="timeline") return renderTimelinePage(s);
+  if(f==="contact") return renderContactPage(s);
+  return renderJournalPage(s);
 }
 function renderManage(){
   let h=`<button class="ghost-row" onclick="manage=false;render()"><i class="ti ti-arrow-left"></i>Done editing</button>`;
