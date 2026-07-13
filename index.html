@@ -286,7 +286,7 @@ const DEFAULTS={
     {id:"finance",name:"Finance",icon:"ti-coin",subs:[
       {id:"investing",name:"Investing",kw:["invest","invested","investing","stock","stocks","etf","index fund","mutual fund","sip","crypto","bitcoin","shares","portfolio","dividend","brokerage","401k","roth"]},
       {id:"bills",name:"Bills & utilities",kw:["bill","bills","electricity","electric","internet","wifi","rent","utility","utilities","subscription","recharge","insurance","tuition","phone bill","water bill","emi"]},
-      {id:"spending",name:"Spending",kw:["spent","bought","purchase","purchased","ordered","groceries","shopping","paid for","amazon"]},
+      {id:"spending",name:"Spending",kw:["spent","bought","purchase","purchased","ordered","shopping","paid for","amazon"]},
       {id:"income",name:"Income",kw:["salary","paycheck","stipend","refund","deposit","earned","got paid","cashback"]}]},
     {id:"health",name:"Health",icon:"ti-heart",subs:[
       {id:"exercise",name:"Exercise",kw:["run","ran","running","gym","workout","worked out","lift","lifted","walk","walked","yoga","swim","swam","cycling","cardio","exercise","miles","steps"]},
@@ -328,6 +328,9 @@ function migrate(d){
       if(hf){hf.name="Nutrition"; hf.kw=["protein","diet","calories","fasting","nutrition","vitamins"];}}
   }
   d.sections.forEach(s=>{if(!s.flavor) s.flavor=fl[s.id]||"journal";});
+  const fin=d.sections.find(s=>s.id==="finance");
+  if(fin){const sp=fin.subs.find(x=>x.id==="spending");
+    if(sp&&sp.kw) sp.kw=sp.kw.filter(k=>k!=="groceries");}
   return d;
 }
 function load(){
@@ -392,6 +395,12 @@ function parseAmount(t){
   const m=t.match(/\$\s?(\d[\d,]*(?:\.\d{1,2})?)/)||t.match(/(\d[\d,]*(?:\.\d{1,2})?)\s?(?:dollars|bucks|usd)\b/i);
   return m?parseFloat(m[1].replace(/,/g,"")):null;
 }
+const kwCache={};
+function kwHit(t,kw){
+  let re=kwCache[kw];
+  if(!re){re=kwCache[kw]=new RegExp("(^|[^a-z])"+kw.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"(s|es)?($|[^a-z])");}
+  return re.test(t);
+}
 function classify(text){
   const t=" "+text.toLowerCase()+" ";
   const {due,repeat}=parseTime(t);
@@ -404,9 +413,9 @@ function classify(text){
   let best={sec:null,sub:null,score:0};
   for(const s of db.sections) for(const sub of s.subs){
     let sc=0;
-    for(const kw of sub.kw||[]) if(t.includes(kw)) sc+=kw.length>4?2:1;
+    for(const kw of sub.kw||[]) if(kwHit(t,kw)) sc+=kw.length>4?2:1;
     const lk=db.learned[s.id+"/"+sub.id]||[];
-    for(const kw of lk) if(t.includes(kw)) sc+=3;
+    for(const kw of lk) if(kwHit(t,kw)) sc+=3;
     if(sc>best.score) best={sec:s.id,sub:sub.id,score:sc};
   }
   if(!best.sec){best.sec="notes"; best.sub=type==="task"?"ideas":"journal";}
@@ -433,8 +442,8 @@ function submitCapture(){
       const t=" "+text.toLowerCase()+" ";
       let best=s.subs[0].id, bs=0;
       for(const sub of s.subs){
-        let sc=0; for(const kw of sub.kw||[]) if(t.includes(kw)) sc++;
-        for(const kw of db.learned[s.id+"/"+sub.id]||[]) if(t.includes(kw)) sc+=2;
+        let sc=0; for(const kw of sub.kw||[]) if(kwHit(t,kw)) sc++;
+        for(const kw of db.learned[s.id+"/"+sub.id]||[]) if(kwHit(t,kw)) sc+=2;
         if(sc>bs){bs=sc; best=sub.id;}
       }
       g.sub=best;
@@ -490,7 +499,23 @@ function savePending(){
   db.entries.push(pending);
   const saved=pending; pending=null;
   save(); renderConfirm(); render();
-  if(saved.type==="task"&&saved.due&&confirm("Add a reminder to your iPhone Calendar?")) downloadICS(saved);
+  if(saved.type==="task"&&saved.due) showCalToast(saved.id);
+}
+function showCalToast(id){
+  const box=document.getElementById("confirmBox");
+  box.innerHTML=`<div class="confirm" style="display:flex; align-items:center; gap:8px;">
+    <span style="font-size:13px; color:var(--ink2); flex:1;">Saved. iPhone reminder?</span>
+    <button class="pill on" onclick="icsFor('${id}');dismissToast()">Add to Calendar</button>
+    <button class="pill" onclick="dismissToast()">No</button>
+  </div>`;
+  box.classList.remove("hidden");
+  clearTimeout(window.__calT);
+  window.__calT=setTimeout(dismissToast,8000);
+}
+function dismissToast(){
+  if(pending) return;
+  const box=document.getElementById("confirmBox");
+  box.classList.add("hidden"); box.innerHTML="";
 }
 
 /* ---------- calendar handoff ---------- */
@@ -763,7 +788,7 @@ function renderDash(s){
 let manage=false;
 function miniStat(s){
   const f=flavorOf(s), es=secEntries(s.id);
-  if(f==="ledger"){const c=monthSum(s.id,0); return c?"$"+Math.round(c).toLocaleString()+" this month":"nothing this month";}
+  if(f==="ledger"){const c=monthSpend(s,0); return c?"$"+Math.round(c).toLocaleString()+" spent this month":"nothing this month";}
   if(f==="habit"){const wk=es.filter(e=>e.ts>Date.now()-7*864e5).length; return wk?wk+" entr"+(wk===1?"y":"ies")+" this week":"quiet week so far";}
   if(f==="timeline"){
     const open=es.filter(e=>e.type==="task"&&!e.done&&e.due);
@@ -810,6 +835,16 @@ function subStreak(secId,subId){
   return st;
 }
 function isIncomeSubOf(x){return /income|salary|earn|refund|cashback/i.test(x.name);}
+function monthSpend(s,offset){
+  const now=new Date();
+  const a=new Date(now.getFullYear(),now.getMonth()-offset,1).getTime();
+  const b=new Date(now.getFullYear(),now.getMonth()-offset+1,1).getTime();
+  return secEntries(s.id).filter(e=>{
+    if(e.amount==null||e.ts<a||e.ts>=b) return false;
+    const x=s.subs.find(y=>y.id===e.sub);
+    return !(x&&isIncomeSubOf(x));
+  }).reduce((t,e)=>t+e.amount,0);
+}
 function ledgerTxns(s,limit){
   const acc=accOf(s);
   const items=secEntries(s.id).sort((x,y)=>y.ts-x.ts).slice(0,limit);
@@ -827,7 +862,7 @@ function ledgerTxns(s,limit){
     const d=new Date(e.ts);
     h+=swipeWrap(e.id,`<div class="swipe-content stmt-line">
       <span class="stmt-date">${d.getDate()} ${d.toLocaleDateString([],{month:"short"})}</span>
-      ${e.type==="task"&&!e.done?`<button class="checkbox" aria-label="Done" style="width:18px;height:18px;" onclick="toggleDone('${e.id}',this)"></button>`:""}
+      ${e.type==="task"&&!e.done?`<button class="checkbox" aria-label="Done" onclick="toggleDone('${e.id}',this)"></button>`:""}
       <span style="min-width:0; flex:1;">
         <span style="font-size:14px; display:block;">${e.done?"<del>":""}${esc(e.text)}${e.done?"</del>":""}</span>
         <span class="sub-line">${x?esc(x.name):""}${e.type==="task"&&!e.done&&e.due?" · "+dueLabel(e):""}</span>
@@ -847,20 +882,20 @@ function renderLedgerPage(s){
   const inn=monthEs.filter(e=>{const x=s.subs.find(y=>y.id===e.sub); return x&&isIncomeSubOf(x);}).reduce((t,e)=>t+e.amount,0);
   const out=monthEs.reduce((t,e)=>t+e.amount,0)-inn;
   const net=inn-out;
-  const bars=[...Array(6)].map((_,i)=>monthSum(s.id,5-i));
+  const bars=[...Array(6)].map((_,i)=>monthSpend(s,5-i));
   const mx=Math.max(...bars,1);
   h+=`<div class="hero" style="background:${acc};">
     <div class="h-label"><i class="ti ${s.icon}"></i>${esc(s.name)} · this month</div>
     <div class="h-big">${net<0?"−":""}$${Math.abs(Math.round(net)).toLocaleString()}</div>
     <div class="h-sub">in $${Math.round(inn).toLocaleString()} · out $${Math.round(out).toLocaleString()} · net</div>
     <div class="h-bars">${bars.map(b=>`<div style="height:${Math.max(9,Math.round(b/mx*100))}%;"></div>`).join("")}</div>
-    <div class="h-sub" style="margin-top:4px; font-size:11px;">last 6 months</div>
+    <div class="h-sub" style="margin-top:4px; font-size:11px;">spending, last 6 months</div>
   </div>
   <button class="dash-flavor" onclick="cycleFlavor('${s.id}')" style="margin:0 4px 10px;">Ledger view · tap to change</button>`;
   h+=`<div class="chip-row">
     <button class="chip" onclick="quickAdd('spent $ on ')">+ expense</button>
     <button class="chip" onclick="quickAdd('received $ ')">+ income</button>
-    <button class="chip" onclick="quickAdd('pay  bill tonight')">+ bill</button>
+    <button class="chip" onclick="quickAdd('pay bill tonight')">+ bill</button>
   </div>`;
   h+=`<div class="chip-row">`+s.subs.map(x=>{
     const c=db.entries.filter(e=>e.sec===s.id&&e.sub===x.id).length;
@@ -1278,13 +1313,20 @@ function initLock(){
 }
 
 /* ---------- swipe gestures ---------- */
-let swEl=null, swX=0, swY=0, swBase=0, swActive=false, swOpenEl=null;
+let swEl=null, swX=0, swY=0, swBase=0, swActive=false, swOpenEl=null, swSuppress=false;
 function closeSwipe(){if(swOpenEl){swOpenEl.style.transform=""; swOpenEl=null;}}
 function swipeInit(){
   const main=document.getElementById("main");
+  main.addEventListener("click",e=>{
+    if(swSuppress){e.stopPropagation(); e.preventDefault(); swSuppress=false;}
+  },true);
   main.addEventListener("pointerdown",e=>{
     const c=e.target.closest(".swipe-content");
-    if(!c){closeSwipe(); return;}
+    if(!c){
+      if(e.target.closest(".swipe-actions")) return;
+      if(swOpenEl) swSuppress=true;
+      closeSwipe(); return;
+    }
     if(swOpenEl&&swOpenEl!==c) closeSwipe();
     swEl=c; swX=e.clientX; swY=e.clientY;
     swBase=(swOpenEl===c)?-128:0; swActive=false;
@@ -1304,6 +1346,7 @@ function swipeInit(){
     if(!swEl) return;
     const t=swBase+((e.clientX!==undefined?e.clientX:swX)-swX);
     swEl.style.transition="";
+    if(swActive) swSuppress=true;
     if(swActive&&t<-55){swEl.style.transform="translateX(-128px)"; swOpenEl=swEl;}
     else{swEl.style.transform=""; if(swOpenEl===swEl) swOpenEl=null;}
     swEl=null; swActive=false;
