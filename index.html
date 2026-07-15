@@ -1329,18 +1329,23 @@ function initLock(){
 }
 
 /* ---------- swipe gestures ---------- */
-let swEl=null, swX=0, swY=0, swBase=0, swActive=false, swOpenEl=null, swSuppress=false;
+let swEl=null, swX=0, swY=0, swBase=0, swActive=false, swOpenEl=null, swSuppress=false, swSupT=null;
+function armSuppress(){
+  swSuppress=true;
+  clearTimeout(swSupT);
+  swSupT=setTimeout(()=>{swSuppress=false;},350);
+}
 function closeSwipe(){if(swOpenEl){swOpenEl.style.transform=""; swOpenEl=null;}}
 function swipeInit(){
   const main=document.getElementById("main");
   main.addEventListener("click",e=>{
-    if(swSuppress){e.stopPropagation(); e.preventDefault(); swSuppress=false;}
+    if(swSuppress){e.stopPropagation(); e.preventDefault(); swSuppress=false; clearTimeout(swSupT);}
   },true);
   main.addEventListener("pointerdown",e=>{
     const c=e.target.closest(".swipe-content");
     if(!c){
       if(e.target.closest(".swipe-actions")) return;
-      if(swOpenEl) swSuppress=true;
+      if(swOpenEl) armSuppress();
       closeSwipe(); return;
     }
     if(swOpenEl&&swOpenEl!==c) closeSwipe();
@@ -1363,7 +1368,7 @@ function swipeInit(){
     if(!swEl) return;
     const t=swBase+((e.clientX!==undefined?e.clientX:swX)-swX);
     swEl.style.transition="";
-    if(swActive) swSuppress=true;
+    if(swActive) armSuppress();
     const eid=swEl.parentElement?swEl.parentElement.dataset.eid:null;
     if(swActive&&t<-55){swEl.style.transform="translateX(-128px)"; swOpenEl=swEl;}
     else if(swActive&&t>55&&eid&&swBase===0){
