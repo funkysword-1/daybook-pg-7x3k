@@ -1339,7 +1339,10 @@ function closeSwipe(){if(swOpenEl){swOpenEl.style.transform=""; swOpenEl=null;}}
 function swipeInit(){
   const main=document.getElementById("main");
   main.addEventListener("click",e=>{
-    if(swSuppress){e.stopPropagation(); e.preventDefault(); swSuppress=false; clearTimeout(swSupT);}
+    if(!swSuppress) return;
+    if(e.target.closest(".swipe-actions")||e.target.closest(".swipe-actions-left")) return;
+    e.stopPropagation(); e.preventDefault();
+    swSuppress=false; clearTimeout(swSupT);
   },true);
   main.addEventListener("pointerdown",e=>{
     const c=e.target.closest(".swipe-content");
