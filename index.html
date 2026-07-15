@@ -144,7 +144,8 @@
   @media (prefers-reduced-motion: reduce){*{animation:none !important; transition:none !important;}}
   /* swipe rows */
   .swipe{position:relative; overflow:hidden; margin-bottom:10px; border-radius:16px;}
-  #main .swipe{animation:listin .34s cubic-bezier(.22,1,.36,1) both;}
+  #main.swap .swipe, #main.appin .swipe{animation:listin .34s cubic-bezier(.22,1,.36,1) both;}
+  button.swipe-content:active{transform:none;}
   @keyframes listin{from{opacity:0; transform:translateY(10px);} to{opacity:1; transform:none;}}
   html[data-theme="dark"] .card,html[data-theme="dark"] .sec-card,html[data-theme="dark"] .capture{
     border:0.5px solid var(--line); box-shadow:none;}
@@ -155,6 +156,9 @@
   .sa{width:64px; display:flex; align-items:center; justify-content:center; font-size:19px; color:#F7F4EC;}
   .sa.edit{background:var(--sage);}
   .sa.del{background:#A94F3F;}
+  .swipe-actions-left{position:absolute; top:0; bottom:0; left:0; width:96px; display:flex;
+    align-items:center; padding-left:16px; gap:6px; color:#F7F4EC; background:var(--sage);
+    z-index:0; font-size:13px;}
   .swipe.flat{border-radius:0; margin-bottom:0;}
   .swipe-content.sec-head,.swipe-content.sub-row{background:var(--card);}
   /* dashboards */
@@ -468,12 +472,12 @@ function renderConfirm(){
         <button class="pill ${pending.type==='log'?'on':''}" onclick="setType('log')">Log</button>
         <select onchange="setSec(this.value)">${secOpts}</select>
         <select onchange="setSub(this.value)">${subOpts}</select>
-        ${pending.type==='task'?`<button class="pill" style="border-style:dashed;" onclick="pending._w=!pending._w;renderConfirm()"><i class="ti ti-clock" style="font-size:12px;"></i> ${dueLabel(pending)}${pending.repeat?" · repeats":""}</button>`:""}
+        ${pending.type==='task'?`<button class="pill" id="whenPill" style="border-style:dashed;" onclick="pending._w=!pending._w;renderConfirm()"><i class="ti ti-clock" style="font-size:12px;"></i> ${dueLabel(pending)}${pending.repeat?" · repeats":""}</button>`:""}
         ${pending.amount!=null?`<span class="pill">$${pending.amount.toLocaleString()}</span>`:""}
       </div>
       ${pending.type==='task'&&pending._w?`<div class="when-row">
-        <input type="datetime-local" value="${pending.due?dtLocal(pending.due):""}" onchange="pending.due=this.value?new Date(this.value).getTime():null;renderConfirm()">
-        <select onchange="pending.repeat=this.value||null;renderConfirm()">${repeatOpts(pending.repeat)}</select>
+        <input type="datetime-local" value="${pending.due?dtLocal(pending.due):""}" onchange="pending.due=this.value?new Date(this.value).getTime():null;updWhenPill()">
+        <select onchange="pending.repeat=this.value||null;updWhenPill()">${repeatOpts(pending.repeat)}</select>
         <button class="pill" onclick="pending.due=null;pending.repeat=null;renderConfirm()">no time</button>
       </div>`:""}
       <div class="confirm-actions">
@@ -482,6 +486,10 @@ function renderConfirm(){
       </div>
     </div>`;
   box.classList.remove("hidden");
+}
+function updWhenPill(){
+  const p=document.getElementById("whenPill");
+  if(p&&pending) p.innerHTML=`<i class="ti ti-clock" style="font-size:12px;"></i> ${dueLabel(pending)}${pending.repeat?" · repeats":""}`;
 }
 function setType(t){pending.type=t; renderConfirm();}
 function setSec(id){pending.sec=id; pending.sub=db.sections.find(s=>s.id===id).subs[0].id; renderConfirm();}
@@ -570,6 +578,12 @@ function finishToggle(id){
   }
   save(); render();
 }
+function convertEntry(id){
+  const e=db.entries.find(x=>x.id===id); if(!e) return;
+  if(e.type==="task"&&!e.done){e.type="log";}
+  else{e.type="task"; e.done=false; e.doneTs=null;}
+  save(); setTimeout(render,180);
+}
 function delEntry(id,el){
   if(!confirm("Delete this entry?")) return;
   const row=el?(el.closest(".swipe")||el.closest(".card,.tint-card")):null;
@@ -656,7 +670,8 @@ function render(){
   main.querySelectorAll(".swipe").forEach((el,i)=>{el.style.animationDelay=Math.min(i*28,168)+"ms";});
 }
 function swipeWrap(id,inner){
-  return `<div class="swipe">
+  return `<div class="swipe" data-eid="${id}">
+    <div class="swipe-actions-left"><i class="ti ti-arrow-back-up"></i>switch</div>
     <div class="swipe-actions">
       <button class="sa edit" aria-label="Edit" onclick="openEdit('${id}')"><i class="ti ti-pencil"></i></button>
       <button class="sa del" aria-label="Delete" onclick="delEntry('${id}',this)"><i class="ti ti-trash"></i></button>
@@ -1222,6 +1237,7 @@ function saveEdit(){
   draft.text=draft.text.trim()||draft.text;
   draft.amount=parseAmount(draft.text);
   if(draft.type==="log"){draft.due=null; draft.repeat=null;}
+  if(draft.type==="task"&&draft.done){draft.done=false; draft.doneTs=null;}
   const i=db.entries.findIndex(x=>x.id===draft.id);
   if(i>=0) db.entries[i]=draft;
   draft=null; save(); closeSheet(); render();
@@ -1339,7 +1355,8 @@ function swipeInit(){
       else if(Math.abs(dy)>10){swEl=null; return;}
       else return;
     }
-    const t=Math.min(0,Math.max(-150,swBase+dx));
+    const canRight=swBase===0&&swEl.parentElement&&swEl.parentElement.dataset.eid;
+    const t=Math.min(canRight?96:0,Math.max(-150,swBase+dx));
     swEl.style.transition="none"; swEl.style.transform=`translateX(${t}px)`;
   });
   const end=e=>{
@@ -1347,7 +1364,12 @@ function swipeInit(){
     const t=swBase+((e.clientX!==undefined?e.clientX:swX)-swX);
     swEl.style.transition="";
     if(swActive) swSuppress=true;
+    const eid=swEl.parentElement?swEl.parentElement.dataset.eid:null;
     if(swActive&&t<-55){swEl.style.transform="translateX(-128px)"; swOpenEl=swEl;}
+    else if(swActive&&t>55&&eid&&swBase===0){
+      swEl.style.transform="";
+      convertEntry(eid);
+    }
     else{swEl.style.transform=""; if(swOpenEl===swEl) swOpenEl=null;}
     swEl=null; swActive=false;
   };
