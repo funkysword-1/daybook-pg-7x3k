@@ -284,6 +284,7 @@
 const KEY="daybook.v1";
 const DEFAULTS={
   entries:[],
+  trash:[],
   settings:{pinHash:null,theme:"auto"},
   learned:{},
   sections:[
@@ -335,6 +336,8 @@ function migrate(d){
   const fin=d.sections.find(s=>s.id==="finance");
   if(fin){const sp=fin.subs.find(x=>x.id==="spending");
     if(sp&&sp.kw) sp.kw=sp.kw.filter(k=>k!=="groceries");}
+  if(!d.trash) d.trash=[];
+  d.trash=d.trash.filter(t=>Date.now()-(t._deletedAt||0)<30*864e5);
   return d;
 }
 function load(){
@@ -587,7 +590,11 @@ function convertEntry(id){
 function delEntry(id,el){
   if(!confirm("Delete this entry?")) return;
   const row=el?(el.closest(".swipe")||el.closest(".card,.tint-card")):null;
-  const fin=()=>{db.entries=db.entries.filter(x=>x.id!==id); save(); render();};
+  const fin=()=>{
+    const e=db.entries.find(x=>x.id===id);
+    if(e) db.trash.push({...e,_deletedAt:Date.now()});
+    db.entries=db.entries.filter(x=>x.id!==id); save(); render();
+  };
   if(row){row.style.transition="opacity .18s ease, transform .18s ease";
     row.style.opacity="0"; row.style.transform="scale(.96)"; setTimeout(fin,180);}
   else fin();
@@ -1274,6 +1281,7 @@ function openSettings(){
   body.innerHTML=`<h2 style="margin-bottom:8px;">Settings</h2>
     <button class="opt" onclick="cycleTheme()"><i class="ti ti-moon"></i>Appearance: ${themeLabel()}</button>
     <button class="opt" onclick="setPin()"><i class="ti ti-lock"></i>${db.settings.pinHash?"Change or remove passcode":"Set a passcode"}</button>
+    <button class="opt" onclick="openTrash()"><i class="ti ti-recycle"></i>Recently deleted${db.trash.length?" ("+db.trash.length+")":""}</button>
     <button class="opt" onclick="exportData()"><i class="ti ti-download"></i>Export backup</button>
     <button class="opt" onclick="document.getElementById('importFile').click()"><i class="ti ti-upload"></i>Import backup</button>
     <button class="opt" style="color:var(--warn);" onclick="eraseAll()"><i class="ti ti-trash" style="color:var(--warn);"></i>Erase everything</button>
@@ -1281,6 +1289,36 @@ function openSettings(){
   document.getElementById("sheetWrap").classList.remove("hidden");
 }
 function closeSheet(){document.getElementById("sheetWrap").classList.add("hidden");}
+function openTrash(){
+  const body=document.getElementById("sheetBody");
+  const items=[...db.trash].sort((a,b)=>(b._deletedAt||0)-(a._deletedAt||0));
+  body.innerHTML=`<h2 style="margin-bottom:4px;">Recently deleted</h2>
+    <p class="muted" style="margin:0 0 8px;">Kept for 30 days, then gone for good.</p>`
+    +(items.length?items.map(e=>`<div class="opt" style="gap:8px;">
+      <span style="flex:1; min-width:0;">
+        <span style="font-size:14px; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(e.text)}</span>
+        <span class="sub-line">${esc(pathOf(e))} · deleted ${fmtDay(e._deletedAt||Date.now())}</span>
+      </span>
+      <button class="pill on" onclick="restoreEntry('${e.id}')">Restore</button>
+      <button class="icon-btn" aria-label="Delete forever" onclick="purgeEntry('${e.id}')"><i class="ti ti-x" style="font-size:14px;"></i></button>
+    </div>`).join("")
+    +`<button class="opt" style="color:var(--warn);" onclick="emptyTrash()"><i class="ti ti-trash" style="color:var(--warn);"></i>Empty bin now</button>`
+    :`<p class="empty">Bin is empty.</p>`);
+  document.getElementById("sheetWrap").classList.remove("hidden");
+}
+function restoreEntry(id){
+  const i=db.trash.findIndex(x=>x.id===id); if(i<0) return;
+  const e=db.trash.splice(i,1)[0]; delete e._deletedAt;
+  let s=db.sections.find(x=>x.id===e.sec);
+  if(!s){s=db.sections[0]; e.sec=s.id; e.sub=s.subs[0].id;}
+  else if(!s.subs.find(y=>y.id===e.sub)) e.sub=s.subs[0].id;
+  db.entries.push(e); save(); openTrash(); render();
+}
+function purgeEntry(id){db.trash=db.trash.filter(x=>x.id!==id); save(); openTrash();}
+function emptyTrash(){
+  if(!confirm("Empty the bin? These can't be recovered.")) return;
+  db.trash=[]; save(); openTrash();
+}
 async function setPin(){
   if(db.settings.pinHash){
     const cur=prompt("Current passcode:"); if(cur===null) return;
